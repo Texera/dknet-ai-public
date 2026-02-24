@@ -15,36 +15,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-FROM bitnami/postgresql:17.4.0-debian-12-r11
+FROM postgres:17-bookworm
 
-USER root
-
-# Install build tools and Groonga APT repo
-RUN install_packages \
-    build-essential \
-    git \
+# 1. Install prerequisites for adding the Groonga repository
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
-    curl \
     ca-certificates \
-    pkg-config \
-    libmecab-dev \
-    mecab \
-    gnupg \
-    libpq-dev
+    && rm -rf /var/lib/apt/lists/*
 
-# Add Groonga official APT repo
+# 2. Add Groonga official APT repo and install pre-compiled PGroonga for PGDG
 RUN wget https://packages.groonga.org/debian/groonga-apt-source-latest-bookworm.deb && \
     dpkg -i groonga-apt-source-latest-bookworm.deb && \
     apt-get update && \
-    apt-get install -y \
-    libgroonga-dev \
-    groonga-tokenizer-mecab
-
-# Clone PGroonga with submodules and build it using Bitnami's pg_config
-RUN git clone --recursive https://github.com/pgroonga/pgroonga.git /tmp/pgroonga && \
-    cd /tmp/pgroonga && \
-    PG_CONFIG=/opt/bitnami/postgresql/bin/pg_config make && \
-    PG_CONFIG=/opt/bitnami/postgresql/bin/pg_config make install && \
-    rm -rf /tmp/pgroonga
-
-USER 1001
+    apt-get install -y --no-install-recommends \
+    postgresql-17-pgdg-pgroonga \
+    groonga-tokenizer-mecab \
+    mecab \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm groonga-apt-source-latest-bookworm.deb
