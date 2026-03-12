@@ -19,7 +19,7 @@ texera:
   # Container image registry and tag for all Texera services
   # Override these to use a different registry or version
   imageRegistry: ghcr.io/apache
-  imageTag: nightly
+  imageTag: latest
 
 global:
   # Required by Bitnami sub-charts (postgresql, minio) to allow custom images
