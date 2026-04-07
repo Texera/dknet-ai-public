@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { ChangeDetectorRef, Component, OnInit } from "@angular/core";
+import { ChangeDetectorRef, Component, OnInit, TemplateRef, ViewChild } from "@angular/core";
 import { take } from "rxjs/operators";
 import { WorkflowComputingUnitManagingService } from "../../service/workflow-computing-unit/workflow-computing-unit-managing.service";
 import { DashboardWorkflowComputingUnit, WorkflowComputingUnitType } from "../../types/workflow-computing-unit";
@@ -41,6 +41,8 @@ import { GuiConfigService } from "../../../common/service/gui-config.service";
   styleUrls: ["./computing-unit-selection.component.scss"],
 })
 export class ComputingUnitSelectionComponent implements OnInit {
+  @ViewChild("awsTerminateContent", { static: true }) awsTerminateContent!: TemplateRef<void>;
+
   // current workflow's Id, will change with wid in the workflowActionService.metadata
   workflowId: number | undefined;
 
@@ -61,6 +63,36 @@ export class ComputingUnitSelectionComponent implements OnInit {
   shmSizeUnit: "Mi" | "Gi" = "Mi"; // default unit
   availableComputingUnitTypes: WorkflowComputingUnitType[] = [];
   localComputingUnitUri: string = ""; // URI for local computing unit
+
+  // AWS-specific variables
+  awsAccessKeyId: string = "";
+  awsSecretAccessKey: string = "";
+  awsRegion: string = "us-west-2";
+  awsInstanceType: string = "t2.micro";
+  awsInstanceTypeOptions: string[] = [
+    "t2.micro",
+    "t2.small",
+    "t2.medium",
+    "t2.large",
+    "t2.xlarge",
+    "t3.micro",
+    "t3.small",
+    "t3.medium",
+    "t3.large",
+    "t3.xlarge",
+    "m5.large",
+    "m5.xlarge",
+  ];
+  awsRegionOptions: string[] = [
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "eu-west-1",
+    "eu-central-1",
+    "ap-southeast-1",
+    "ap-northeast-1",
+  ];
 
   // variables for renaming a computing unit
   editingNameOfUnit: number | null = null;
@@ -344,12 +376,62 @@ export class ComputingUnitSelectionComponent implements OnInit {
           error: (err: unknown) =>
             this.notificationService.error(`Failed to start local computing unit: ${extractErrorMessage(err)}`),
         });
+    } else if (this.selectedComputingUnitType === "aws") {
+      if (this.newComputingUnitName.trim() === "") {
+        this.notificationService.error("Name of the computing unit cannot be empty");
+        return;
+      }
+      if (!this.awsAccessKeyId || this.awsAccessKeyId.trim() === "") {
+        this.notificationService.error("AWS Access Key ID cannot be empty");
+        return;
+      }
+      if (!this.awsSecretAccessKey || this.awsSecretAccessKey.trim() === "") {
+        this.notificationService.error("AWS Secret Access Key cannot be empty");
+        return;
+      }
+      this.computingUnitService
+        .createAwsComputingUnit(
+          this.newComputingUnitName,
+          this.awsAccessKeyId,
+          this.awsSecretAccessKey,
+          this.awsRegion,
+          this.awsInstanceType
+        )
+        .pipe(untilDestroyed(this))
+        .subscribe({
+          next: (unit: DashboardWorkflowComputingUnit) => {
+            this.notificationService.success("Successfully created the new AWS EC2 compute unit");
+            this.selectComputingUnit(this.workflowId, unit.computingUnit.cuid);
+            // Clear credentials from memory after creation
+            this.awsAccessKeyId = "";
+            this.awsSecretAccessKey = "";
+          },
+          error: (err: unknown) =>
+            this.notificationService.error(`Failed to create AWS EC2 computing unit: ${extractErrorMessage(err)}`),
+        });
     } else {
       this.notificationService.error("Please select a valid computing unit type");
     }
   }
 
   openComputingUnitMetadataModal(unit: DashboardWorkflowComputingUnit) {
+    const resource = unit.computingUnit.resource as unknown as Record<string, unknown>;
+    const isAws = unit.computingUnit.type === "aws";
+
+    const awsRows = isAws
+      ? `
+            <tr><th>Instance Type</th><td>${resource["instanceType"] || "N/A"}</td></tr>
+            <tr><th>Region</th><td>${resource["region"] || "N/A"}</td></tr>
+            <tr><th>Instance ID</th><td>${resource["instanceId"] || "N/A"}</td></tr>
+          `
+      : `
+            <tr><th>CPU Limit</th><td>${unit.computingUnit.resource.cpuLimit}</td></tr>
+            <tr><th>Memory Limit</th><td>${unit.computingUnit.resource.memoryLimit}</td></tr>
+            <tr><th>GPU Limit</th><td>${unit.computingUnit.resource.gpuLimit || "None"}</td></tr>
+            <tr><th>JVM Memory</th><td>${unit.computingUnit.resource.jvmMemorySize}</td></tr>
+            <tr><th>Shared Memory</th><td>${unit.computingUnit.resource.shmSize}</td></tr>
+          `;
+
     this.modalService.create({
       nzTitle: "Computing Unit Information",
       nzContent: `
@@ -358,11 +440,7 @@ export class ComputingUnitSelectionComponent implements OnInit {
             <tr><th style="width: 150px;">Name</th><td>${unit.computingUnit.name}</td></tr>
             <tr><th>Status</th><td>${unit.status}</td></tr>
             <tr><th>Type</th><td>${unit.computingUnit.type}</td></tr>
-            <tr><th>CPU Limit</th><td>${unit.computingUnit.resource.cpuLimit}</td></tr>
-            <tr><th>Memory Limit</th><td>${unit.computingUnit.resource.memoryLimit}</td></tr>
-            <tr><th>GPU Limit</th><td>${unit.computingUnit.resource.gpuLimit || "None"}</td></tr>
-            <tr><th>JVM Memory</th><td>${unit.computingUnit.resource.jvmMemorySize}</td></tr>
-            <tr><th>Shared Memory</th><td>${unit.computingUnit.resource.shmSize}</td></tr>
+            ${awsRows}
             <tr><th>Created</th><td>${new Date(unit.computingUnit.creationTime).toLocaleString()}</td></tr>
             <tr><th>Access</th><td>${unit.isOwner ? "Owner" : unit.accessPrivilege}</td></tr>
           </tbody>
@@ -378,10 +456,15 @@ export class ComputingUnitSelectionComponent implements OnInit {
    * Terminate a computing unit.
    * @param cuid The CUID of the unit to terminate.
    */
+  // AWS credentials for terminate flow (bound to template)
+  terminateAwsAccessKeyId: string = "";
+  terminateAwsSecretAccessKey: string = "";
+  awsTerminateUnitName: string = "";
+
   terminateComputingUnit(cuid: number): void {
     const unit = this.allComputingUnits.find(u => u.computingUnit.cuid === cuid);
 
-    if (!unit || !unit.computingUnit.uri) {
+    if (!unit) {
       this.notificationService.error("Invalid computing unit.");
       return;
     }
@@ -390,7 +473,45 @@ export class ComputingUnitSelectionComponent implements OnInit {
     const unitType = unit?.computingUnit.type || "kubernetes"; // fallback
     const templates = this.unitTypeMessageTemplate[unitType];
 
-    // Show confirmation modal
+    // For AWS units, show a credentials prompt modal first
+    if (unitType === "aws") {
+      this.terminateAwsAccessKeyId = "";
+      this.terminateAwsSecretAccessKey = "";
+      this.awsTerminateUnitName = unitName;
+      this.modalService.confirm({
+        nzTitle: templates.terminateTitle,
+        nzContent: this.awsTerminateContent,
+        nzOkText: "Terminate",
+        nzOkType: "primary",
+        nzOnOk: () => {
+          if (!this.terminateAwsAccessKeyId.trim() || !this.terminateAwsSecretAccessKey.trim()) {
+            this.notificationService.error("AWS credentials are required to terminate an AWS computing unit");
+            return false; // keep modal open
+          }
+
+          this.computingUnitStatusService
+            .terminateComputingUnit(cuid, this.terminateAwsAccessKeyId, this.terminateAwsSecretAccessKey)
+            .pipe(untilDestroyed(this))
+            .subscribe({
+              next: (success: boolean) => {
+                if (success) {
+                  this.notificationService.success(`Terminated Computing Unit: ${unitName}`);
+                } else {
+                  this.notificationService.error("Failed to terminate computing unit");
+                }
+              },
+              error: (err: unknown) => {
+                this.notificationService.error(`Failed to terminate computing unit: ${extractErrorMessage(err)}`);
+              },
+            });
+          return true;
+        },
+        nzCancelText: "Cancel",
+      });
+      return;
+    }
+
+    // Show confirmation modal for non-AWS units
     this.modalService.confirm({
       nzTitle: templates.terminateTitle,
       nzContent: templates.terminateWarning
@@ -404,8 +525,6 @@ export class ComputingUnitSelectionComponent implements OnInit {
       nzOkText: unitType === "local" ? "Disconnect" : "Terminate",
       nzOkType: "primary",
       nzOnOk: () => {
-        // Use the ComputingUnitStatusService to handle termination
-        // This will properly close the websocket before terminating the unit
         this.computingUnitStatusService
           .terminateComputingUnit(cuid)
           .pipe(untilDestroyed(this))
@@ -921,6 +1040,17 @@ export class ComputingUnitSelectionComponent implements OnInit {
       terminateSuccess: "Terminated Kubernetes computing unit",
       terminateFailure: "Failed to terminate Kubernetes computing unit",
       terminateTooltip: "Terminate this computing unit",
+    },
+    aws: {
+      createTitle: "Create AWS EC2 Computing Unit",
+      terminateTitle: "Terminate AWS EC2 Computing Unit",
+      terminateWarning:
+        "<p style='color: #ff4d4f;'><strong>Warning:</strong> The EC2 instance will be terminated. All execution results will be lost.</p>",
+      createSuccess: "Successfully created the AWS EC2 computing unit",
+      createFailure: "Failed to create the AWS EC2 computing unit",
+      terminateSuccess: "Terminated AWS EC2 computing unit",
+      terminateFailure: "Failed to terminate AWS EC2 computing unit",
+      terminateTooltip: "Terminate this EC2 instance",
     },
   } as const;
 }

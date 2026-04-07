@@ -250,7 +250,11 @@ export class ComputingUnitStatusService implements OnDestroy {
    * @param cuid The ID of the computing unit to terminate
    * @returns Observable that completes when the termination process is done
    */
-  public terminateComputingUnit(cuid: number): Observable<boolean> {
+  public terminateComputingUnit(
+    cuid: number,
+    awsAccessKeyId?: string,
+    awsSecretAccessKey?: string
+  ): Observable<boolean> {
     const isSelected = this.selectedUnitSubject.value?.computingUnit.cuid === cuid;
 
     if (isSelected && this.workflowWebsocketService.isConnected) {
@@ -258,7 +262,7 @@ export class ComputingUnitStatusService implements OnDestroy {
       this.workflowStatusService.clearStatus();
     }
 
-    return this.computingUnitService.terminateComputingUnit(cuid).pipe(
+    return this.computingUnitService.terminateComputingUnit(cuid, awsAccessKeyId, awsSecretAccessKey).pipe(
       tap(() => {
         // trigger a single refresh; the refresh pipeline will
         // pull the new list and call updateComputingUnits()

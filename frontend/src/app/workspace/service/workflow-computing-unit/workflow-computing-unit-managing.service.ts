@@ -84,9 +84,26 @@ export class WorkflowComputingUnitManagingService {
     jvmMemorySize: string,
     shmSize: string,
     uri: string,
-    unitType: "kubernetes" | "local"
+    unitType: "kubernetes" | "local" | "aws",
+    awsAccessKeyId?: string,
+    awsSecretAccessKey?: string,
+    awsRegion?: string,
+    awsInstanceType?: string
   ): Observable<DashboardWorkflowComputingUnit> {
-    const body = { name, cpuLimit, memoryLimit, gpuLimit, jvmMemorySize, shmSize, uri, unitType };
+    const body: Record<string, string | undefined> = {
+      name,
+      cpuLimit,
+      memoryLimit,
+      gpuLimit,
+      jvmMemorySize,
+      shmSize,
+      uri,
+      unitType,
+      awsAccessKeyId,
+      awsSecretAccessKey,
+      awsRegion,
+      awsInstanceType,
+    };
 
     return this.http
       .post<DashboardWorkflowComputingUnit>(`${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_CREATE_URL}`, body)
@@ -127,12 +144,51 @@ export class WorkflowComputingUnitManagingService {
   }
 
   /**
+   * Create a new AWS EC2 computing unit.
+   *
+   * @param name The name of the computing unit.
+   * @param accessKeyId AWS access key ID (not stored on server).
+   * @param secretAccessKey AWS secret access key (not stored on server).
+   * @param region AWS region (e.g., "us-west-2").
+   * @param instanceType EC2 instance type (e.g., "t2.micro").
+   * @returns An Observable of the created WorkflowComputingUnit.
+   */
+  public createAwsComputingUnit(
+    name: string,
+    accessKeyId: string,
+    secretAccessKey: string,
+    region: string,
+    instanceType: string
+  ): Observable<DashboardWorkflowComputingUnit> {
+    return this.createComputingUnit(
+      name,
+      "NaN",
+      "NaN",
+      "NaN",
+      "NaN",
+      "NaN",
+      "",
+      "aws",
+      accessKeyId,
+      secretAccessKey,
+      region,
+      instanceType
+    );
+  }
+
+  /**
    * Terminate a computing unit (pod) by its URI.
    * @returns An Observable of the server response.
    * @param cuid
    */
-  public terminateComputingUnit(cuid: number): Observable<Response> {
-    return this.http.delete<Response>(`${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_BASE_URL}/${cuid}/terminate`);
+  public terminateComputingUnit(
+    cuid: number,
+    awsAccessKeyId?: string,
+    awsSecretAccessKey?: string
+  ): Observable<Response> {
+    return this.http.delete<Response>(`${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_BASE_URL}/${cuid}/terminate`, {
+      body: { awsAccessKeyId, awsSecretAccessKey },
+    });
   }
 
   /**

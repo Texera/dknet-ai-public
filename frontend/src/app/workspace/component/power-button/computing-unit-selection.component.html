@@ -21,7 +21,7 @@
   class="computing-units-selection"
   [ngClass]="{ 'metrics-visible': isComputingUnitRunning() }">
   <div
-    *ngIf="isComputingUnitRunning() && selectedComputingUnit && selectedComputingUnit.computingUnit.type !== 'local'"
+    *ngIf="isComputingUnitRunning() && selectedComputingUnit && selectedComputingUnit.computingUnit.type !== 'local' && selectedComputingUnit.computingUnit.type !== 'aws'"
     nz-button
     nz-popover
     [nzPopoverContent]="selectedComputingUnit ? metricsTemplate : undefined"
@@ -371,6 +371,63 @@
             class="unit-uri-input" />
         </div>
       </ng-container>
+
+      <!-- Fields for AWS EC2 computing units -->
+      <ng-container *ngIf="selectedComputingUnitType === 'aws'">
+        <div class="select-unit name-field">
+          <span>Computing Unit Name</span>
+          <input
+            [required]="true"
+            nz-input
+            placeholder="Enter the name of your computing unit (required)"
+            [(ngModel)]="newComputingUnitName"
+            class="unit-name-input" />
+        </div>
+        <div class="select-unit name-field">
+          <span>AWS Access Key ID</span>
+          <input
+            [required]="true"
+            nz-input
+            type="password"
+            placeholder="Enter your AWS Access Key ID (required)"
+            [(ngModel)]="awsAccessKeyId"
+            class="unit-name-input" />
+        </div>
+        <div class="select-unit name-field">
+          <span>AWS Secret Access Key</span>
+          <input
+            [required]="true"
+            nz-input
+            type="password"
+            placeholder="Enter your AWS Secret Access Key (required)"
+            [(ngModel)]="awsSecretAccessKey"
+            class="unit-name-input" />
+        </div>
+        <div class="select-unit">
+          <span>AWS Region</span>
+          <nz-select
+            class="type-selection"
+            [(ngModel)]="awsRegion">
+            <nz-option
+              *ngFor="let region of awsRegionOptions"
+              [nzValue]="region"
+              [nzLabel]="region">
+            </nz-option>
+          </nz-select>
+        </div>
+        <div class="select-unit">
+          <span>Instance Type</span>
+          <nz-select
+            class="type-selection"
+            [(ngModel)]="awsInstanceType">
+            <nz-option
+              *ngFor="let type of awsInstanceTypeOptions"
+              [nzValue]="type"
+              [nzLabel]="type">
+            </nz-option>
+          </nz-select>
+        </div>
+      </ng-container>
     </div>
   </ng-template>
   <ng-template #addComputeUnitModalFooter>
@@ -388,6 +445,28 @@
     </button>
   </ng-template>
 </nz-modal>
+
+<!-- Template for AWS terminate credentials prompt -->
+<ng-template #awsTerminateContent>
+  <p>Are you sure you want to terminate <strong>{{awsTerminateUnitName}}</strong>?</p>
+  <p style="color: #ff4d4f;"><strong>Warning:</strong> The EC2 instance will be terminated. All execution results will be lost.</p>
+  <div style="margin-top: 12px;">
+    <label style="display: block; margin-bottom: 4px; font-weight: 500;">AWS Access Key ID</label>
+    <input
+      nz-input
+      type="password"
+      placeholder="Enter Access Key ID"
+      [(ngModel)]="terminateAwsAccessKeyId"
+      style="width: 100%; margin-bottom: 8px;" />
+    <label style="display: block; margin-bottom: 4px; font-weight: 500;">AWS Secret Access Key</label>
+    <input
+      nz-input
+      type="password"
+      placeholder="Enter Secret Access Key"
+      [(ngModel)]="terminateAwsSecretAccessKey"
+      style="width: 100%;" />
+  </div>
+</ng-template>
 
 <ng-template #metricsTemplate>
   <div class="resource-metrics">

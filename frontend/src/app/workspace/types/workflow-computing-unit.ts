@@ -26,7 +26,7 @@ export interface WorkflowComputingUnitResourceLimit {
   nodeAddresses: string[];
 }
 
-export type WorkflowComputingUnitType = "local" | "kubernetes";
+export type WorkflowComputingUnitType = "local" | "kubernetes" | "aws";
 
 export interface WorkflowComputingUnit {
   cuid: number;

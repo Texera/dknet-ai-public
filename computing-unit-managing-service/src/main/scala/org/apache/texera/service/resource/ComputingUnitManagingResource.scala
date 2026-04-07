@@ -35,7 +35,7 @@ import org.apache.texera.config.KubernetesConfig.{
   maxNumOfRunningComputingUnitsPerUser,
   memoryLimitOptions
 }
-import org.apache.texera.config.{ComputingUnitConfig, KubernetesConfig}
+import org.apache.texera.config.{AwsEc2Config, ComputingUnitConfig, KubernetesConfig}
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.SqlServer.withTransaction
 import org.apache.texera.dao.jooq.generated.enums.{PrivilegeEnum, WorkflowComputingUnitTypeEnum}
@@ -48,6 +48,7 @@ import org.apache.texera.dao.jooq.generated.tables.pojos.WorkflowComputingUnit
 import org.apache.texera.service.resource.ComputingUnitManagingResource._
 import org.apache.texera.service.resource.ComputingUnitState._
 import org.apache.texera.service.util.{
+  AwsEc2Client,
   ComputingUnitManagingServiceException,
   InsufficientComputingUnitQuota,
   KubernetesClient
@@ -114,7 +115,16 @@ object ComputingUnitManagingResource {
       gpuLimit: String,
       jvmMemorySize: String,
       shmSize: String,
-      uri: Option[String] = None
+      uri: Option[String] = None,
+      awsAccessKeyId: Option[String] = None,
+      awsSecretAccessKey: Option[String] = None,
+      awsRegion: Option[String] = None,
+      awsInstanceType: Option[String] = None
+  )
+
+  case class WorkflowComputingUnitTerminateParams(
+      awsAccessKeyId: Option[String] = None,
+      awsSecretAccessKey: Option[String] = None
   )
 
   case class WorkflowComputingUnitResourceLimit(
@@ -172,6 +182,7 @@ class ComputingUnitManagingResource {
     allTypes.filter {
       case "local"      => ComputingUnitConfig.localComputingUnitEnabled
       case "kubernetes" => KubernetesConfig.kubernetesComputingUnitEnabled
+      case "aws"        => AwsEc2Config.awsEc2Enabled
       case _            => false // Any unknown types are disabled by default
     }
   }
@@ -190,6 +201,10 @@ class ComputingUnitManagingResource {
 
         if (phaseOpt.contains("Running")) Running else Pending
 
+      // ── AWS CUs are treated as running (no credentials to check) ───
+      case WorkflowComputingUnitTypeEnum.aws =>
+        Running
+
       // ── Any other (unknown) type is treated as pending ──────────────
       case _ =>
         Pending
@@ -206,6 +221,8 @@ class ComputingUnitManagingResource {
           metrics.getOrElse("cpu", ""),
           metrics.getOrElse("memory", "")
         )
+      case WorkflowComputingUnitTypeEnum.aws =>
+        WorkflowComputingUnitMetrics("NaN", "NaN")
       case _ =>
         WorkflowComputingUnitMetrics("NaN", "NaN")
     }
@@ -228,6 +245,10 @@ class ComputingUnitManagingResource {
           podLimits("memory"),
           gpuValue
         )
+      case WorkflowComputingUnitTypeEnum.aws =>
+        WorkflowComputingUnitResourceLimit("NaN", "NaN", "NaN")
+      case _ =>
+        WorkflowComputingUnitResourceLimit("NaN", "NaN", "NaN")
     }
   }
 
@@ -340,6 +361,21 @@ class ComputingUnitManagingResource {
         if (param.uri.forall(_.trim.isEmpty))
           throw new ForbiddenException("URI is required for local computing units")
 
+      // AWS-specific checks
+      case WorkflowComputingUnitTypeEnum.aws =>
+        if (param.awsAccessKeyId.forall(_.trim.isEmpty))
+          throw new ForbiddenException("AWS Access Key ID is required for AWS computing units")
+        if (param.awsSecretAccessKey.forall(_.trim.isEmpty))
+          throw new ForbiddenException("AWS Secret Access Key is required for AWS computing units")
+        val instanceType = param.awsInstanceType.getOrElse("")
+        if (instanceType.trim.isEmpty)
+          throw new ForbiddenException("Instance type is required for AWS computing units")
+        if (!AwsEc2Config.instanceTypeOptions.contains(instanceType))
+          throw new ForbiddenException(
+            s"Instance type '$instanceType' is not allowed. " +
+              s"Valid options: ${AwsEc2Config.instanceTypeOptions.mkString(", ")}"
+          )
+
       // Anything else (shouldn't happen if you keep supported types in sync)
       case _ =>
         throw new ForbiddenException(s"Unsupported computing-unit type: ${param.unitType}")
@@ -386,6 +422,23 @@ class ComputingUnitManagingResource {
               "nodeAddresses" -> Json.arr(param.uri.get)
             )
           )
+
+        // ── AWS EC2 CU ──────────────────────────────────────────
+        // NOTE: credentials are NOT stored in the resource JSON
+        case WorkflowComputingUnitTypeEnum.aws =>
+          Json.stringify(
+            Json.obj(
+              "cpuLimit" -> "NaN",
+              "memoryLimit" -> "NaN",
+              "gpuLimit" -> "NaN",
+              "jvmMemorySize" -> "NaN",
+              "shmSize" -> "NaN",
+              "instanceType" -> JsString(param.awsInstanceType.get),
+              "region" -> JsString(param.awsRegion.getOrElse(AwsEc2Config.defaultRegion)),
+              "instanceId" -> JsString(""), // filled in after launch
+              "nodeAddresses" -> Json.arr()
+            )
+          )
         case _ => "{}"
       }
 
@@ -397,11 +450,12 @@ class ComputingUnitManagingResource {
       computingUnit.setType(WorkflowComputingUnitTypeEnum.lookupLiteral(param.unitType))
       computingUnit.setResource(resourceJson)
 
-      // Set URI during initial insert for local only
-      if (cuType == WorkflowComputingUnitTypeEnum.local) {
-        computingUnit.setUri(param.uri.get)
-      } else {
-        computingUnit.setUri("") // placeholder for kubernetes
+      // Set URI during initial insert
+      cuType match {
+        case WorkflowComputingUnitTypeEnum.local =>
+          computingUnit.setUri(param.uri.get)
+        case _ =>
+          computingUnit.setUri("") // placeholder, updated after resource creation
       }
 
       wcDao.insert(computingUnit)
@@ -450,6 +504,56 @@ class ComputingUnitManagingResource {
 
           case t: Throwable =>
             throw t
+        }
+      }
+
+      // ── AWS EC2 launch ──────────────────────────────────────────
+      if (cuType == WorkflowComputingUnitTypeEnum.aws && insertedUnit != null) {
+        val awsRegion = param.awsRegion.getOrElse(AwsEc2Config.defaultRegion)
+        try {
+          val instanceId = AwsEc2Client.createInstance(
+            accessKeyId = param.awsAccessKeyId.get,
+            secretAccessKey = param.awsSecretAccessKey.get,
+            region = awsRegion,
+            instanceType = param.awsInstanceType.get
+          )
+
+          // Try to get the public IP (may not be available immediately)
+          val publicIp = AwsEc2Client
+            .getInstancePublicIp(
+              param.awsAccessKeyId.get,
+              param.awsSecretAccessKey.get,
+              awsRegion,
+              instanceId
+            )
+            .getOrElse("")
+
+          val uri =
+            if (publicIp.nonEmpty) s"$publicIp:${AwsEc2Config.computingUnitPort}"
+            else ""
+
+          insertedUnit.setUri(uri)
+
+          val updatedResource: JsObject =
+            Json
+              .parse(insertedUnit.getResource)
+              .as[JsObject] ++
+              Json.obj(
+                "instanceId" -> instanceId,
+                "nodeAddresses" -> Json.arr(uri)
+              )
+
+          insertedUnit.setResource(Json.stringify(updatedResource))
+          wcDao.update(insertedUnit)
+
+        } catch {
+          case t: Throwable =>
+            // Clean up DB entry on failure
+            insertedUnit.setTerminateTime(new Timestamp(System.currentTimeMillis()))
+            wcDao.update(insertedUnit)
+            throw new ForbiddenException(
+              s"Failed to create AWS EC2 instance: ${t.getMessage}"
+            )
         }
       }
 
@@ -527,6 +631,8 @@ class ComputingUnitManagingResource {
       // terminateTime in the database **before** we build the response list so
       // that subsequent API calls will no longer return this unit.
       allUnits.foreach { unit =>
+        // Only check pod existence for Kubernetes units (AWS units can't be
+        // checked without credentials, local units don't have pods)
         if (
           unit.getType == WorkflowComputingUnitTypeEnum.kubernetes &&
           !KubernetesClient.podExists(unit.getCuid)
@@ -628,7 +734,8 @@ class ComputingUnitManagingResource {
   @Path("/{cuid}/terminate")
   def terminateComputingUnit(
       @PathParam("cuid") cuid: Integer,
-      @Auth user: SessionUser
+      @Auth user: SessionUser,
+      param: WorkflowComputingUnitTerminateParams
   ): Response = {
     if (!userOwnComputingUnit(context, cuid, user.getUid)) {
       return Response
@@ -642,9 +749,32 @@ class ComputingUnitManagingResource {
       val cuDao = new WorkflowComputingUnitDao(ctx.configuration())
       val unit = getComputingUnitByCuid(ctx, cuid)
 
-      // if the computing unit is kubernetes pod, then kill the pod
-      if (unit.getType == WorkflowComputingUnitTypeEnum.kubernetes) {
-        KubernetesClient.deletePod(cuid)
+      unit.getType match {
+        case WorkflowComputingUnitTypeEnum.kubernetes =>
+          KubernetesClient.deletePod(cuid)
+
+        case WorkflowComputingUnitTypeEnum.aws =>
+          // AWS requires credentials to terminate the instance
+          if (param == null || param.awsAccessKeyId.forall(_.trim.isEmpty) ||
+              param.awsSecretAccessKey.forall(_.trim.isEmpty)) {
+            throw new ForbiddenException(
+              "AWS credentials are required to terminate an AWS computing unit"
+            )
+          }
+          val resourceJson = Json.parse(unit.getResource)
+          val instanceId = (resourceJson \ "instanceId").as[String]
+          val region = (resourceJson \ "region").as[String]
+
+          if (instanceId.nonEmpty) {
+            AwsEc2Client.terminateInstance(
+              param.awsAccessKeyId.get,
+              param.awsSecretAccessKey.get,
+              region,
+              instanceId
+            )
+          }
+
+        case _ => // local and others: no infrastructure to tear down
       }
 
       unit.setTerminateTime(new Timestamp(System.currentTimeMillis()))
