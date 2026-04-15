@@ -1,59 +1,19 @@
 {
-  "/api/models": {
-    "target": "http://localhost:9096",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/chat/completion": {
-    "target": "http://localhost:9096",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/compile": {
-    "target": "http://localhost:9090",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/dataset": {
-    "target": "http://localhost:9092",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/access/dataset/**": {
-    "target": "http://localhost:9092",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/access/computing-unit/**": {
-    "target": "http://localhost:8888",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/config/**": {
-    "target": "http://localhost:9094",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api/computing-unit": {
-    "target": "http://localhost:8888",
-    "secure": false,
-    "changeOrigin": true
-  },
   "/api": {
-    "target": "http://localhost:8080",
+    "target": "http://localhost:30080",
     "secure": false,
-    "changeOrigin": false
+    "changeOrigin": true
   },
   "/wsapi": {
-    "target": "http://localhost:8085",
+    "target": "http://localhost:30080",
     "secure": false,
-    "changeOrigin": false,
+    "changeOrigin": true,
     "ws": true
   },
   "/rtc": {
-    "target": "http://localhost:1234",
+    "target": "http://localhost:30080",
     "ws": true,
     "secure": false,
-    "changeOrigin": false
+    "changeOrigin": true
   }
 }

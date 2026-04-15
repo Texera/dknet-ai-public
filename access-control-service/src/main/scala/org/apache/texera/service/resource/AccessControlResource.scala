@@ -27,7 +27,9 @@ import org.apache.texera.auth.JwtParser.parseToken
 import org.apache.texera.auth.SessionUser
 import org.apache.texera.auth.util.{ComputingUnitAccess, HeaderField}
 import org.apache.texera.config.{GuiConfig, KubernetesConfig, LLMConfig}
+import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
+import org.apache.texera.dao.jooq.generated.tables.daos.WorkflowComputingUnitDao
 
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -122,12 +124,23 @@ object AccessControlResource extends LazyLogging {
     }
 
     // Dynamic Routing Logic
-    val workflowComputingUnitPoolName = KubernetesConfig.computeUnitPoolName
-    val workflowComputingUnitPoolNamespace = KubernetesConfig.computeUnitPoolNamespace
-    val workflowComputingUnitPoolPort = KubernetesConfig.computeUnitPortNumber
+    // Check if the CU has a remote URI set in the database
+    val cuDao = new WorkflowComputingUnitDao(
+      SqlServer.getInstance().createDSLContext().configuration()
+    )
+    val unit = cuDao.fetchOneByCuid(cuidInt)
+    val remoteUri = Option(unit.getUri).map(_.trim).filter(_.nonEmpty)
 
-    val targetHost =
-      s"computing-unit-$cuidInt.$workflowComputingUnitPoolName-svc.$workflowComputingUnitPoolNamespace.svc.cluster.local:$workflowComputingUnitPoolPort"
+    val targetHost = remoteUri match {
+      case Some(uri) =>
+        logger.info(s"Routing CU $cuidInt to remote host: $uri")
+        uri
+      case None =>
+        val workflowComputingUnitPoolName = KubernetesConfig.computeUnitPoolName
+        val workflowComputingUnitPoolNamespace = KubernetesConfig.computeUnitPoolNamespace
+        val workflowComputingUnitPoolPort = KubernetesConfig.computeUnitPortNumber
+        s"computing-unit-$cuidInt.$workflowComputingUnitPoolName-svc.$workflowComputingUnitPoolNamespace.svc.cluster.local:$workflowComputingUnitPoolPort"
+    }
 
     Response
       .ok()
