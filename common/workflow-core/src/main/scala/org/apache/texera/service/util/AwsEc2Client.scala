@@ -24,6 +24,8 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.ec2.Ec2Client
 import software.amazon.awssdk.services.ec2.model._
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import scala.jdk.CollectionConverters._
 
 /**
@@ -86,7 +88,7 @@ object AwsEc2Client {
     * Finds a public subnet in the user's account (one that auto-assigns public IPs).
     * Falls back to any available subnet if no public one is found.
     */
-  private def findPublicSubnet(client: Ec2Client): String = {
+  private def findPublicSubnet(client: Ec2Client): Subnet = {
     val request = DescribeSubnetsRequest.builder().build()
     val subnets = client.describeSubnets(request).subnets().asScala
 
@@ -101,8 +103,69 @@ object AwsEc2Client {
     subnets
       .find(_.mapPublicIpOnLaunch())
       .orElse(subnets.headOption)
-      .map(_.subnetId())
       .get
+  }
+
+  // Name of the security group we create/reuse for Texera remote CUs.
+  private val texeraSecurityGroupName = "texera-computing-unit-sg"
+  // Port the CU master listens on inside the EC2 (matches AwsEc2Config.computingUnitPort).
+  private val texeraCuPort = 8085
+
+  /**
+    * Finds or creates a security group that permits inbound traffic to the CU
+    * master port (8085) and SSH, in the VPC of the given subnet.
+    */
+  private def ensureSecurityGroup(client: Ec2Client, vpcId: String): String = {
+    val describe = client
+      .describeSecurityGroups(
+        DescribeSecurityGroupsRequest
+          .builder()
+          .filters(
+            Filter.builder().name("group-name").values(texeraSecurityGroupName).build(),
+            Filter.builder().name("vpc-id").values(vpcId).build()
+          )
+          .build()
+      )
+      .securityGroups()
+      .asScala
+
+    describe.headOption.map(_.groupId()).getOrElse {
+      val created = client.createSecurityGroup(
+        CreateSecurityGroupRequest
+          .builder()
+          .groupName(texeraSecurityGroupName)
+          .description("Texera remote computing unit (auto-created)")
+          .vpcId(vpcId)
+          .build()
+      )
+      val sgId = created.groupId()
+
+      val ingress = Seq(
+        IpPermission
+          .builder()
+          .ipProtocol("tcp")
+          .fromPort(texeraCuPort)
+          .toPort(texeraCuPort)
+          .ipRanges(IpRange.builder().cidrIp("0.0.0.0/0").build())
+          .build(),
+        IpPermission
+          .builder()
+          .ipProtocol("tcp")
+          .fromPort(22)
+          .toPort(22)
+          .ipRanges(IpRange.builder().cidrIp("0.0.0.0/0").build())
+          .build()
+      )
+
+      client.authorizeSecurityGroupIngress(
+        AuthorizeSecurityGroupIngressRequest
+          .builder()
+          .groupId(sgId)
+          .ipPermissions(ingress.asJava)
+          .build()
+      )
+      sgId
+    }
   }
 
   /**
@@ -113,7 +176,7 @@ object AwsEc2Client {
     * @param secretAccessKey AWS secret access key (not stored)
     * @param region          AWS region (e.g., "us-west-2")
     * @param instanceType    EC2 instance type (e.g., "t2.micro")
-    * @param userData        Optional base64-encoded user data script
+    * @param userData        Optional user-data script (plain text, base64-encoded here)
     * @return the EC2 instance ID
     */
   def createInstance(
@@ -125,17 +188,33 @@ object AwsEc2Client {
   ): String = {
     withEc2Client(accessKeyId, secretAccessKey, region) { client =>
       val amiId = findLatestAmi(client)
-      val subnetId = findPublicSubnet(client)
+      val subnet = findPublicSubnet(client)
+      val sgId = ensureSecurityGroup(client, subnet.vpcId())
 
       val requestBuilder = RunInstancesRequest
         .builder()
         .imageId(amiId)
         .instanceType(InstanceType.fromValue(instanceType))
-        .subnetId(subnetId)
+        .subnetId(subnet.subnetId())
+        .securityGroupIds(sgId)
         .minCount(1)
         .maxCount(1)
+        .blockDeviceMappings(
+          BlockDeviceMapping
+            .builder()
+            .deviceName("/dev/xvda")
+            .ebs(
+              EbsBlockDevice
+                .builder()
+                .volumeSize(50)
+                .volumeType(VolumeType.GP3)
+                .deleteOnTermination(true)
+                .build()
+            )
+            .build()
+        )
 
-      userData.foreach(ud => requestBuilder.userData(ud))
+      userData.foreach(ud => requestBuilder.userData(base64Encode(ud)))
 
       val response = client.runInstances(requestBuilder.build())
       val instanceId = response.instances().get(0).instanceId()
@@ -153,6 +232,29 @@ object AwsEc2Client {
 
       instanceId
     }
+  }
+
+  private def base64Encode(raw: String): String =
+    Base64.getEncoder.encodeToString(raw.getBytes(StandardCharsets.UTF_8))
+
+  /**
+    * Polls the EC2 instance until it acquires a public IP (or until the timeout elapses).
+    */
+  def waitForPublicIp(
+      accessKeyId: String,
+      secretAccessKey: String,
+      region: String,
+      instanceId: String,
+      timeoutMillis: Long = 120000L,
+      pollIntervalMillis: Long = 3000L
+  ): Option[String] = {
+    val deadline = System.currentTimeMillis() + timeoutMillis
+    var ip: Option[String] = None
+    while (ip.isEmpty && System.currentTimeMillis() < deadline) {
+      ip = getInstancePublicIp(accessKeyId, secretAccessKey, region, instanceId)
+      if (ip.isEmpty) Thread.sleep(pollIntervalMillis)
+    }
+    ip
   }
 
   /**

@@ -37,6 +37,15 @@ RUN apt-get update && apt-get install -y \
 COPY .git .git
 COPY LICENSE NOTICE DISCLAIMER-WIP ./
 
+# Build-time JDBC connection used ONLY by jooq codegen in common/dao/build.sbt.
+# Override with --build-arg so it can reach a postgres reachable from the builder.
+ARG JOOQ_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/texera_db
+ARG JOOQ_JDBC_USERNAME=postgres
+ARG JOOQ_JDBC_PASSWORD=root_password
+ENV STORAGE_JDBC_URL=${JOOQ_JDBC_URL} \
+    STORAGE_JDBC_USERNAME=${JOOQ_JDBC_USERNAME} \
+    STORAGE_JDBC_PASSWORD=${JOOQ_JDBC_PASSWORD}
+
 RUN sbt clean AccessControlService/dist
 
 # Unzip the texera binary

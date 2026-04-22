@@ -157,6 +157,94 @@ object ComputingUnitManagingResource {
   case class ComputingUnitTypesResponse(
       typeOptions: List[String]
   )
+
+  /**
+    * Builds a cloud-init bash script that the new AWS EC2 runs on first boot.
+    * It installs containerd, pulls the CU master image, writes an env file,
+    * and starts a systemd unit (`cu-master.service`) that launches the CU
+    * container via `ctr run --net-host` with all the env vars.
+    *
+    * The env map is serialized into a KEY=VALUE file consumed by a small
+    * wrapper script — systemd's Environment directive would lose the ability
+    * to pass vars through to `ctr run`, so a wrapper is the cleanest option.
+    */
+  private[resource] def buildAwsCuUserData(
+      image: String,
+      port: Int,
+      env: Map[String, String]
+  ): String = {
+    val envFileContents =
+      env
+        .map {
+          case (k, v) =>
+            // Values with newlines or single quotes would break the env file;
+            // the CU master's vars are endpoints/flags that do not contain them.
+            val escaped = v.replace("\\", "\\\\").replace("\n", "\\n")
+            s"$k=$escaped"
+        }
+        .mkString("\n")
+
+    s"""#!/bin/bash
+       |set -eux
+       |exec >/var/log/cu-bootstrap.log 2>&1
+       |
+       |# 1) Ensure containerd is installed and running (pre-installed on AL2023 but safe to re-run)
+       |dnf install -y containerd >/dev/null 2>&1 || yum install -y containerd >/dev/null 2>&1 || true
+       |systemctl enable --now containerd
+       |
+       |# 2) Pull the CU master OCI image via containerd
+       |IMG='$image'
+       |for i in 1 2 3 4 5; do
+       |  ctr image pull "$$IMG" && break
+       |  sleep 10
+       |done
+       |
+       |# 3) Write env file (consumed by the wrapper script below)
+       |mkdir -p /etc/cu-master
+       |cat > /etc/cu-master/env <<'TEXERA_CU_ENV_EOF'
+       |$envFileContents
+       |TEXERA_CU_ENV_EOF
+       |chmod 600 /etc/cu-master/env
+       |
+       |# 4) Wrapper script that translates env file lines into `ctr run --env` flags
+       |cat > /usr/local/bin/cu-master-run <<'CU_WRAPPER_EOF'
+       |#!/bin/bash
+       |set -eu
+       |IMG='__IMG__'
+       |/usr/bin/ctr task kill --signal SIGKILL cu-master >/dev/null 2>&1 || true
+       |/usr/bin/ctr container rm cu-master >/dev/null 2>&1 || true
+       |ARGS=()
+       |while IFS= read -r line; do
+       |  [ -z "$$line" ] && continue
+       |  case "$$line" in \\#*) continue;; esac
+       |  ARGS+=(--env "$$line")
+       |done < /etc/cu-master/env
+       |exec /usr/bin/ctr run --rm --net-host "$${ARGS[@]}" "$$IMG" cu-master
+       |CU_WRAPPER_EOF
+       |sed -i "s|__IMG__|$$IMG|g" /usr/local/bin/cu-master-run
+       |chmod +x /usr/local/bin/cu-master-run
+       |
+       |# 5) systemd unit that keeps the CU master alive
+       |cat > /etc/systemd/system/cu-master.service <<'CU_UNIT_EOF'
+       |[Unit]
+       |Description=Texera Computing Unit Master
+       |After=containerd.service network-online.target
+       |Requires=containerd.service
+       |
+       |[Service]
+       |Type=simple
+       |ExecStart=/usr/local/bin/cu-master-run
+       |Restart=always
+       |RestartSec=5
+       |
+       |[Install]
+       |WantedBy=multi-user.target
+       |CU_UNIT_EOF
+       |
+       |systemctl daemon-reload
+       |systemctl enable --now cu-master.service
+       |""".stripMargin
+  }
 }
 
 @Produces(Array(MediaType.APPLICATION_JSON))
@@ -511,16 +599,58 @@ class ComputingUnitManagingResource {
       if (cuType == WorkflowComputingUnitTypeEnum.aws && insertedUnit != null) {
         val awsRegion = param.awsRegion.getOrElse(AwsEc2Config.defaultRegion)
         try {
+          val cuEnv = computingUnitEnvironmentVariables ++ Map(
+            EnvironmentalVariable.ENV_USER_JWT_TOKEN -> userToken,
+            EnvironmentalVariable.ENV_JAVA_OPTS -> "-Xmx2g"
+          )
+
+          // The k8s-internal DNS names in cuEnv aren't reachable from a remote
+          // EC2. Rewrite them to the texera host's public address. The manager
+          // deployment sets TEXERA_PUBLIC_HOST to expose this.
+          val publicHost = sys.env
+            .get("TEXERA_PUBLIC_HOST")
+            .map(_.trim)
+            .filter(_.nonEmpty)
+            .getOrElse("")
+          if (publicHost.isEmpty) {
+            throw new ForbiddenException(
+              "TEXERA_PUBLIC_HOST is not set on the manager — cannot build reachable " +
+                "endpoints for a remote AWS CU."
+            )
+          }
+          val publicCuEnv: Map[String, String] = cuEnv.map {
+            case (k, v) =>
+              val s = v.toString
+              val pub = s
+                .replace("texera-postgresql:5432", s"$publicHost:5432")
+                .replace("texera-minio:9000", s"$publicHost:9000")
+                .replace("texera-lakefs.texera-dev:8000", s"$publicHost:8000")
+                .replace("texera-lakefs:8000", s"$publicHost:8000")
+                .replace("http://file-service-svc:9092", s"http://$publicHost")
+              k -> pub
+          }
+
+          val userData = buildAwsCuUserData(
+            image = sys.env
+              .getOrElse(
+                "AWS_EC2_CU_IMAGE",
+                "docker.io/alirisheh876/computing-unit-master:remote-cu-amd64"
+              ),
+            port = AwsEc2Config.computingUnitPort,
+            env = publicCuEnv
+          )
+
           val instanceId = AwsEc2Client.createInstance(
             accessKeyId = param.awsAccessKeyId.get,
             secretAccessKey = param.awsSecretAccessKey.get,
             region = awsRegion,
-            instanceType = param.awsInstanceType.get
+            instanceType = param.awsInstanceType.get,
+            userData = Some(userData)
           )
 
-          // Try to get the public IP (may not be available immediately)
+          // Wait for the public IP (EC2 assigns it after the instance enters "pending->running").
           val publicIp = AwsEc2Client
-            .getInstancePublicIp(
+            .waitForPublicIp(
               param.awsAccessKeyId.get,
               param.awsSecretAccessKey.get,
               awsRegion,
