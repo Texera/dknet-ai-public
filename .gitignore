@@ -121,6 +121,8 @@ metals.sbt
 *.kubeconfig
 **/.kube/
 values-*.yaml    # Any environment-specific value overrides
+# Per-deployer helm override files (not committed)
+bin/k8s/override-*.yaml
 
 # Ignore nested node modules
 **/node_modules/
