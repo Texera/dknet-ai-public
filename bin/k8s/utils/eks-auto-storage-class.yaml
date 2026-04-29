@@ -1,0 +1,16 @@
+# StorageClass for EKS Auto Mode's managed EBS CSI driver.
+# Apply before `helm install` with override-eks.yaml:
+#   kubectl apply -f bin/k8s/utils/eks-auto-storage-class.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: auto-ebs-sc
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.eks.amazonaws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  encrypted: "true"

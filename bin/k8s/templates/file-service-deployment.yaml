@@ -39,19 +39,24 @@ spec:
           ports:
             - containerPort: {{ .Values.fileService.service.port }}
           env:
-            # LakeFS & S3 Access
+            # S3 Access
             - name: STORAGE_S3_ENDPOINT
-              value: http://{{ .Release.Name }}-minio:9000
+              value: {{ .Values.storage.s3.endpoint | quote }}
+            - name: STORAGE_S3_REGION
+              value: {{ .Values.storage.s3.region | quote }}
+            - name: STORAGE_LAKEFS_BLOCK_STORAGE_BUCKET_NAME
+              value: {{ .Values.storage.s3.bucket | quote }}
             - name: STORAGE_S3_AUTH_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio
-                  key: root-user
+                  name: {{ .Values.storage.s3.existingSecret | default (printf "%s-s3-credentials" .Release.Name) }}
+                  key: access-key-id
             - name: STORAGE_S3_AUTH_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-minio
-                  key: root-password
+                  name: {{ .Values.storage.s3.existingSecret | default (printf "%s-s3-credentials" .Release.Name) }}
+                  key: secret-access-key
+            # LakeFS Access
             - name: STORAGE_LAKEFS_ENDPOINT
               value: http://{{ .Release.Name }}-lakefs:8000/api/v1
             - name: STORAGE_LAKEFS_AUTH_USERNAME

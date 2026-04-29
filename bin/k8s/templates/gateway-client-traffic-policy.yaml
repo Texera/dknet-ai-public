@@ -1,0 +1,22 @@
+# Pin ALPN to HTTP/1.1 on the gateway's TLS listener.
+#
+# Envoy Gateway v1.6 does not bridge WebSocket-over-HTTP/2 (RFC 8441
+# Extended CONNECT) to HTTP/1.1 upstreams, so when the browser uses HTTPS
+# and ALPN negotiates h2, every /wsapi and /rtc upgrade fails with
+# response_code_details=upgrade_failed. Forcing ALPN to http/1.1 makes the
+# browser use HTTP/1.1, which Envoy proxies to the upstreams cleanly. Plain
+# REST requests are unaffected — pipelined HTTP/1.1 over TLS is fast enough
+# for our traffic shape.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: {{ .Release.Name }}-http1-only
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Release.Name }}-gateway
+  tls:
+    alpnProtocols:
+      - http/1.1

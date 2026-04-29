@@ -1,0 +1,32 @@
+{{- if .Values.gatewayConfig.loadBalancer }}
+{{- if .Values.gatewayConfig.loadBalancer.eipAllocationId }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Release.Name }}-envoy-proxy
+  namespace: {{ .Release.Namespace }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/aws-load-balancer-type: external
+          service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+          service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+          service.beta.kubernetes.io/aws-load-balancer-eip-allocations: {{ .Values.gatewayConfig.loadBalancer.eipAllocationId }}
+          {{- if .Values.gatewayConfig.loadBalancer.subnetId }}
+          service.beta.kubernetes.io/aws-load-balancer-subnets: {{ .Values.gatewayConfig.loadBalancer.subnetId }}
+          {{- end }}
+      {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
+      # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
+      # live in the AZs the LB is provisioned in; with a single EIP we have
+      # only one AZ enabled, so out-of-zone proxy pods become un-routable.
+      envoyDeployment:
+        pod:
+          nodeSelector:
+            topology.kubernetes.io/zone: {{ .Values.gatewayConfig.loadBalancer.availabilityZone | quote }}
+      {{- end }}
+{{- end }}
+{{- end }}

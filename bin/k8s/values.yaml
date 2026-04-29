@@ -22,22 +22,46 @@ texera:
   imageTag: latest
 
 global:
-  # Required by Bitnami sub-charts (postgresql, minio) to allow custom images
+  # Required by Bitnami sub-charts (postgresql) to allow custom images
   security:
     allowInsecureImages: true
 
 # Persistence Configuration
 # This controls how Persistent Volumes (PVs) and Persistent Volume Claims (PVCs) are managed
-# 
-# removeAfterUninstall: 
+#
+# removeAfterUninstall:
 #   - true: PVCs will be deleted when helm uninstalls the chart
 #   - false: PVCs will remain after uninstall to preserve the data
 persistence:
   removeAfterUninstall: true
-  minioHostLocalPath: ""
   postgresqlHostLocalPath: ""
 
-# Part 1: the configuration of Postgres, Minio and LakeFS
+# ---------------------------------------------------------------------
+# Object storage (S3-compatible).
+# The chart no longer ships an in-cluster MinIO; the app talks directly
+# to an S3-compatible endpoint. For AWS S3 in us-west-1:
+#   storage.s3.endpoint: "https://s3.us-west-1.amazonaws.com"
+#   storage.s3.region:   "us-west-1"
+#   storage.s3.bucket:   "your-bucket"
+# For a MinIO you run yourself (e.g., docker-compose for local dev):
+#   storage.s3.endpoint: "http://host.docker.internal:9000"
+#   storage.s3.region:   "us-east-1"
+#
+# Credentials: either set accessKeyId/secretAccessKey here (chart will
+# create a Secret named "{release}-s3-credentials") OR set existingSecret
+# to the name of a pre-existing Secret with keys access-key-id and
+# secret-access-key.
+# ---------------------------------------------------------------------
+storage:
+  s3:
+    endpoint: ""
+    region: "us-west-2"
+    bucket: "texera-dataset"
+    existingSecret: ""
+    accessKeyId: ""
+    secretAccessKey: ""
+
+# Part 1: the configuration of Postgres and LakeFS
 postgresql:
   image:
     repository: groonga/pgroonga
@@ -65,30 +89,6 @@ postgresql:
     initdb:
       scriptsConfigMap: "postgresql-init-script"
 
-minio:
-  mode: standalone
-  image:
-    repository: bitnamilegacy/minio
-    tag: 2025.3.12-debian-12-r0
-  gateway:
-    enabled: false
-    hostname: "" # the url for the minio, e.g. "minio.example.com"
-    tlsSecretName: "" # e.g. "minio-tls-secret"
-  auth:
-    rootUser: texera_minio
-    rootPassword: password
-  service:
-    # In production, use ClusterIP to avoid exposing the minio to the internet
-    # type: ClusterIP
-    type: NodePort
-    nodePorts:
-      api: 31000
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: local-path
-    existingClaim: "minio-data-pvc"
-
 lakefs:
   secrets:
     authEncryptSecretKey: random_string_for_lakefs
@@ -99,19 +99,34 @@ lakefs:
     secretKey: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
   service:
     port: 8000
+  # LakeFS blockstore uses the same S3 endpoint/region/credentials as the
+  # app (see storage.s3 above). For AWS S3, the blockstore config needs
+  # only a region; for a custom endpoint (self-hosted MinIO, LocalStack,
+  # etc.) uncomment the endpoint/force_path_style lines below.
   lakefsConfig: |
     database:
       type: postgres
     blockstore:
       type: s3
       s3:
-        endpoint: http://texera-minio:9000
+        region: us-west-2
         pre_signed_expiry: 15m
-        pre_signed_endpoint: http://localhost:31000
-        force_path_style: true
-        credentials:
-          access_key_id: texera_minio
-          secret_access_key: password
+        # endpoint: http://my-minio:9000
+        # force_path_style: true
+  # Inject the same S3 credentials into the LakeFS container via the
+  # standard AWS SDK env vars. Secret name follows storage.s3.existingSecret
+  # or defaults to "{release}-s3-credentials".
+  extraEnvVars:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: texera-s3-credentials
+          key: access-key-id
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: texera-s3-credentials
+          key: secret-access-key
 
 # Part2: configurations of Texera-related micro services
 texeraImages:
@@ -280,6 +295,26 @@ metrics-server:
   serviceAccount:
     create: true
   priorityClassName: system-cluster-critical
+
+# ---------------------------------------------------------------------
+# Warm-node pool for fast CU launches.
+#
+# When enabled, keeps `replicas` always-on placeholder pods (one per node
+# via podAntiAffinity), each demanding the same resources as a typical CU.
+# This makes Karpenter keep that many nodes warm with the CU image already
+# cached. A new CU then preempts a placeholder and starts in ~15s instead
+# of ~3 minutes.
+#
+# Disabled by default (only worthwhile on EKS Auto Mode or any cluster with
+# autoscaling-driven cold starts).
+# Cost: roughly 1× c5a.large per replica (~$60/mo).
+# ---------------------------------------------------------------------
+computingUnitWarmPool:
+  enabled: false
+  replicas: 1
+  resources:
+    cpu: "1"
+    memory: "2Gi"
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml

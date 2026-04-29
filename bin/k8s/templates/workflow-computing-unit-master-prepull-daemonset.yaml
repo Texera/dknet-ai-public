@@ -32,6 +32,11 @@ spec:
         app: {{ .Release.Name }}-computing-unit-master-prepuller
     spec:
       restartPolicy: Always
+      # The computing-unit-master image is linux/amd64 only (dev builds are
+      # single-arch). Restrict the DS to amd64 nodes so it doesn't fail on
+      # system NodePool ARM nodes.
+      nodeSelector:
+        kubernetes.io/arch: amd64
       tolerations:
         - operator: "Exists"
       initContainers:

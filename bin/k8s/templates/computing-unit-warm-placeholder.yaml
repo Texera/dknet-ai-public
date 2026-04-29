@@ -1,0 +1,71 @@
+{{- if .Values.computingUnitWarmPool.enabled }}
+# Warm-node placeholder for fast CU launches.
+#
+# Mechanics:
+#   1. The PriorityClass below has a NEGATIVE value (-1000), making any pod
+#      that uses it preemptable by anything at default priority (0).
+#   2. The Deployment runs N replicas of a tiny `pause` container, each with
+#      resource requests sized to match a typical CU (cpu=1, memory=2Gi).
+#      podAntiAffinity (topologyKey=hostname) forces each replica onto its
+#      own node, so N replicas keep N warm nodes alive.
+#   3. Because the placeholder is the only pod on the warm node, Karpenter
+#      (EKS Auto Mode) considers the node "in use" and does not consolidate
+#      it away.
+#   4. When a real CU pod is created (default priority 0), the scheduler
+#      preempts the placeholder, the CU lands on the now-free warm node
+#      with the image already cached by the prepull DaemonSet, and the
+#      placeholder enters Pending. Karpenter sees the Pending placeholder
+#      and provisions a new warm node in the background — restoring the
+#      warm capacity within ~2-3 minutes.
+#
+# To disable in non-EKS deployments, set computingUnitWarmPool.enabled=false
+# (default in values.yaml).
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Release.Name }}-cu-warm-placeholder
+value: -1000
+globalDefault: false
+description: "Preemptable placeholder used to keep CU-pool nodes warm."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-cu-warm-placeholder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Release.Name }}-cu-warm-placeholder
+spec:
+  replicas: {{ .Values.computingUnitWarmPool.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-cu-warm-placeholder
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-cu-warm-placeholder
+    spec:
+      priorityClassName: {{ .Release.Name }}-cu-warm-placeholder
+      terminationGracePeriodSeconds: 0
+      # Match the prepuller DaemonSet's node target so the warm node has the
+      # CU image cached when the placeholder gets evicted.
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: {{ .Release.Name }}-cu-warm-placeholder
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests:
+              cpu: {{ .Values.computingUnitWarmPool.resources.cpu | quote }}
+              memory: {{ .Values.computingUnitWarmPool.resources.memory | quote }}
+            limits:
+              cpu: {{ .Values.computingUnitWarmPool.resources.cpu | quote }}
+              memory: {{ .Values.computingUnitWarmPool.resources.memory | quote }}
+{{- end }}

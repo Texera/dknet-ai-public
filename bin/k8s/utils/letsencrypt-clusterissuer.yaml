@@ -1,0 +1,38 @@
+---
+# Let's Encrypt ClusterIssuer used by the Gateway in this chart.
+# Cluster-scoped (lives outside the chart) so a single issuer + ACME
+# account can serve any release/namespace and survive `helm uninstall`.
+#
+# Apply once per cluster, BEFORE `helm install`:
+#   kubectl apply -f bin/k8s/utils/letsencrypt-clusterissuer.yaml
+#
+# The HTTP-01 solver uses Gateway API (gatewayHTTPRoute), so cert-manager
+# must be installed with ExperimentalGatewayAPISupport=true:
+#   helm install cert-manager jetstack/cert-manager \
+#     --namespace cert-manager --create-namespace \
+#     --set crds.enabled=true \
+#     --set "config.apiVersion=controller.config.cert-manager.io/v1alpha1" \
+#     --set "config.kind=ControllerConfiguration" \
+#     --set "config.featureGates.ExperimentalGatewayAPISupport=true" \
+#     --set "extraArgs={--feature-gates=ExperimentalGatewayAPISupport=true}"
+#
+# The solver auto-creates a temporary HTTPRoute attached to the Gateway
+# below for the challenge. The Gateway's HTTP listener (port 80) must be
+# reachable from the public internet — already true via the EIP/NLB.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: arisheh@uci.edu
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: texera-gateway
+                namespace: default
+                kind: Gateway
