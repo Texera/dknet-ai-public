@@ -26,22 +26,22 @@
   </div>
   <div class="info-panel">
     <h3>Cluster Information</h3>
-    <ng-container *ngIf="selectedCluster; else noClusterSelected">
+    <ng-container *ngIf="selectedCluster as cluster; else noClusterSelected">
       <div class="info-row">
         <span class="info-label">Name:</span>
-        <span class="info-value">{{ selectedCluster.name }}</span>
+        <span class="info-value">{{ cluster.name }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Machine Type:</span>
-        <span class="info-value">{{ selectedCluster.machineType }}</span>
+        <span class="info-value">{{ cluster.machineType }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Machines:</span>
-        <span class="info-value">{{ selectedCluster.numberOfMachines }}</span>
+        <span class="info-value">{{ cluster.numberOfMachines }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Status:</span>
-        <span class="info-value">{{ selectedCluster.status }}</span>
+        <span class="info-value">{{ cluster.status }}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Created At:</span>
@@ -49,7 +49,7 @@
           class="info-value"
           nz-tooltip
           [nzTooltipTitle]="createdAtTooltip">
-          {{ selectedCluster.creationTime | date:'medium' }}
+          {{ cluster.creationTime | date:'medium' }}
         </span>
       </div>
     </ng-container>
