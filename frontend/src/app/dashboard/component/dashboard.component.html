@@ -109,6 +109,18 @@
             <span>Compute</span>
           </li>
           <li
+            *ngIf="sidebarTabs.cluster_enabled"
+            nz-menu-item
+            nz-tooltip="Manage your clusters"
+            nzMatchRouter="true"
+            nzTooltipPlacement="right"
+            routerLink="/dashboard/user/cluster">
+            <span
+              nz-icon
+              nzType="cluster"></span>
+            <span>CloudBioMapper Clusters</span>
+          </li>
+          <li
             *ngIf="sidebarTabs.quota_enabled"
             nz-menu-item
             nz-tooltip="Quota information"

@@ -190,6 +190,12 @@ import { NzCheckboxModule } from "ng-zorro-antd/checkbox";
 import { RegistrationRequestModalComponent } from "./common/service/user/registration-request-modal/registration-request-modal.component";
 import { UserComputingUnitComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit.component";
 import { UserComputingUnitListItemComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit-list-item/user-computing-unit-list-item.component";
+import { DirectoryPathInputComponent } from "./workspace/component/directory-path-input/directory-path-input.component";
+import { DirectorySelectionComponent } from "./workspace/component/directory-selection/directory-selection.component";
+import { ClusterComponent } from "./dashboard/component/user/cluster/cluster.component";
+import { ClusterManagementModalComponent } from "./dashboard/component/user/cluster/cluster-management-modal/cluster-management-modal.component";
+import { ClusterSelectionComponent } from "./workspace/component/cluster-selection/cluster-selection.component";
+import { ClusterAutoCompleteComponent } from "./workspace/component/cluster-autocomplete/cluster-autocomplete.component";
 
 registerLocaleData(en);
 
@@ -290,6 +296,12 @@ registerLocaleData(en);
     MarkdownDescriptionComponent,
     UserComputingUnitComponent,
     UserComputingUnitListItemComponent,
+    DirectoryPathInputComponent,
+    DirectorySelectionComponent,
+    ClusterComponent,
+    ClusterManagementModalComponent,
+    ClusterSelectionComponent,
+    ClusterAutoCompleteComponent,
   ],
   imports: [
     BrowserModule,
