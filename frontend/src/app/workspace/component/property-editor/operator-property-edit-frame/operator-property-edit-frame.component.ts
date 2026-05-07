@@ -439,23 +439,9 @@ export class OperatorPropertyEditFrameComponent implements OnInit, OnChanges, On
         };
       }
 
-      // if the title is fileName, fastQFiles, fastAFiles, or gtfFile, then change it to custom autocomplete input template
-      if (
-        mappedField.key == "fileName" ||
-        mappedField.key == "fastQFiles" ||
-        mappedField.key == "fastAFiles" ||
-        mappedField.key == "gtfFile"
-      ) {
+      // if the title is fileName, then change it to custom autocomplete input template
+      if (mappedField.key === "fileName") {
         mappedField.type = "inputautocomplete";
-      }
-
-      // if the title is clusterId, then change it to cluster-autocomplete
-      if (mappedField.key == "cluster") {
-        mappedField.type = "clusterautocomplete";
-      }
-
-      if (mappedField.key == "directoryName") {
-        mappedField.type = "directorypathinput";
       }
 
       if (mappedField.key === "datasetVersionPath") {

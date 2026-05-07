@@ -44,12 +44,9 @@ object DocumentFactory {
     * @param fileUri the uri of the document
     * @return ReadonlyVirtualDocument
     */
-  def openReadonlyDocument(
-      fileUri: URI,
-      isDirectory: Boolean = false
-  ): ReadonlyVirtualDocument[_] = {
+  def openReadonlyDocument(fileUri: URI): ReadonlyVirtualDocument[_] = {
     fileUri.getScheme match {
-      case DATASET_FILE_URI_SCHEME => new DatasetFileDocument(fileUri, isDirectory)
+      case DATASET_FILE_URI_SCHEME => new DatasetFileDocument(fileUri)
       case "file"                  => new ReadonlyLocalFileDocument(fileUri)
       case unsupportedScheme =>
         throw new UnsupportedOperationException(

@@ -22,7 +22,6 @@ package org.apache.texera.amber.operator
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type
 import com.fasterxml.jackson.annotation._
 import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaTitle
-import org.apache.amber.operator.cloudmapper.CloudMapperSourceOpDesc
 import org.apache.texera.amber.core.executor.OperatorExecutor
 import org.apache.texera.amber.core.tuple.Schema
 import org.apache.texera.amber.core.virtualidentity.{
@@ -429,11 +428,7 @@ trait StateTransferFunc
       value = classOf[SklearnAdvancedSVRTrainerOpDesc],
       name = "SVRTrainer"
     ),
-    new Type(value = classOf[SklearnTestingOpDesc], name = "SklearnTesting"),
-    new Type(
-      value = classOf[CloudMapperSourceOpDesc],
-      name = "CloudBioMapper"
-    )
+    new Type(value = classOf[SklearnTestingOpDesc], name = "SklearnTesting")
   )
 )
 abstract class LogicalOp extends PortDescriptor with Serializable {

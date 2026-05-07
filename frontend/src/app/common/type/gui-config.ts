@@ -54,7 +54,6 @@ export interface SidebarTabs {
   projects_enabled: boolean;
   workflows_enabled: boolean;
   datasets_enabled: boolean;
-  cluster_enabled: boolean;
   quota_enabled: boolean;
   forum_enabled: boolean;
   about_enabled: boolean;
