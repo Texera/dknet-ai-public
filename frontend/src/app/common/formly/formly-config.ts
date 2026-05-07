@@ -28,8 +28,6 @@ import { DatasetFileSelectorComponent } from "../../workspace/component/dataset-
 import { CollabWrapperComponent } from "./collab-wrapper/collab-wrapper/collab-wrapper.component";
 import { FormlyRepeatDndComponent } from "./repeat-dnd/repeat-dnd.component";
 import { DatasetVersionSelectorComponent } from "../../workspace/component/dataset-version-selector/dataset-version-selector.component";
-import { DirectoryPathInputComponent } from "../../workspace/component/directory-path-input/directory-path-input.component";
-import { ClusterAutoCompleteComponent } from "src/app/workspace/component/cluster-autocomplete/cluster-autocomplete.component";
 
 /**
  * Configuration for using Json Schema with Formly.
@@ -82,8 +80,6 @@ export const TEXERA_FORMLY_CONFIG = {
     { name: "inputautocomplete", component: DatasetFileSelectorComponent, wrappers: ["form-field"] },
     { name: "datasetversionselector", component: DatasetVersionSelectorComponent, wrappers: ["form-field"] },
     { name: "repeat-section-dnd", component: FormlyRepeatDndComponent },
-    { name: "clusterautocomplete", component: ClusterAutoCompleteComponent, wrappers: ["form-field"] },
-    { name: "directorypathinput", component: DirectoryPathInputComponent, wrappers: ["form-field"] },
   ],
   wrappers: [
     { name: "preset-wrapper", component: PresetWrapperComponent },
