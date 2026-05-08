@@ -17,11 +17,13 @@
  * under the License.
  */
 
-import { Component, OnInit } from "@angular/core";
+import { Component, ElementRef, OnInit, ViewChild } from "@angular/core";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
+import { Router } from "@angular/router";
 import { UserService } from "src/app/common/service/user/user.service";
 import { BehaviorSubject } from "rxjs";
 import { GuiConfigService } from "../../../common/service/gui-config.service";
+import { DASHBOARD_USER_WORKFLOW } from "../../../app-routing.constant";
 
 @UntilDestroy()
 @Component({
@@ -31,10 +33,13 @@ import { GuiConfigService } from "../../../common/service/gui-config.service";
   standalone: false,
 })
 export class AboutComponent implements OnInit {
+  @ViewChild("loginSection") loginSectionRef?: ElementRef<HTMLElement>;
+
   isLogin$ = new BehaviorSubject<boolean>(false); // control the visibility of the local login component
 
   constructor(
     private userService: UserService,
+    private router: Router,
     protected config: GuiConfigService
   ) {}
 
@@ -47,5 +52,18 @@ export class AboutComponent implements OnInit {
       .subscribe(user => {
         this.isLogin$.next(user !== undefined);
       });
+  }
+
+  getStarted(): void {
+    if (this.userService.isLogin()) {
+      this.router.navigate([DASHBOARD_USER_WORKFLOW]);
+      return;
+    }
+    const loginEl = this.loginSectionRef?.nativeElement;
+    if (loginEl) {
+      loginEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    this.router.navigate([DASHBOARD_USER_WORKFLOW]);
   }
 }

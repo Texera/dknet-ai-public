@@ -219,7 +219,53 @@
   (nzOnCancel)="handleAddComputeUnitModalCancel()">
   <ng-template #addComputeUnitModalTitle>Create Computing Unit</ng-template>
   <ng-template #addComputeUnitModalContent>
-    <div class="create-compute-unit-container">
+    <!-- ── Progress view: shown once the user clicks Create ── -->
+    <div
+      *ngIf="creationInProgress"
+      class="create-compute-unit-progress">
+      <nz-progress
+        [nzPercent]="creationProgressPercent()"
+        [nzStatus]="creationFailed ? 'exception' : (creationCurrentPhase === 'Connected' ? 'success' : 'active')"
+        nzStrokeLinecap="round">
+      </nz-progress>
+      <div class="creation-current-message">
+        <span class="phase-label">{{creationCurrentPhase}}</span>
+        <span
+          *ngIf="creationCurrentMessage"
+          class="phase-message"> — {{creationCurrentMessage}}</span>
+      </div>
+      <nz-steps
+        nzDirection="vertical"
+        nzSize="small"
+        [nzCurrent]="creationPhases.indexOf(creationCurrentPhase)"
+        [nzStatus]="creationFailed ? 'error' : 'process'">
+        <nz-step
+          nzTitle="Submitted"
+          nzDescription="Manager accepted the request"></nz-step>
+        <nz-step
+          nzTitle="Scheduling"
+          nzDescription="Assigning a node (Karpenter may provision a new EC2)"></nz-step>
+        <nz-step
+          nzTitle="Pulling"
+          nzDescription="Fetching the computing-unit image"></nz-step>
+        <nz-step
+          nzTitle="Starting"
+          nzDescription="Container coming up"></nz-step>
+        <nz-step
+          nzTitle="Initializing"
+          nzDescription="JVM, actor system, JDBC warm-up"></nz-step>
+        <nz-step
+          nzTitle="Ready"
+          nzDescription="Pod is Ready"></nz-step>
+        <nz-step
+          nzTitle="Connected"
+          nzDescription="Browser WebSocket attached"></nz-step>
+      </nz-steps>
+    </div>
+
+    <div
+      *ngIf="!creationInProgress"
+      class="create-compute-unit-container">
       <!-- Computing unit type selection -->
       <div class="select-unit">
         <span>Computing Unit Type</span>
@@ -435,9 +481,10 @@
       nz-button
       nzType="default"
       (click)="handleAddComputeUnitModalCancel()">
-      Cancel
+      {{ creationInProgress ? "Close" : "Cancel" }}
     </button>
     <button
+      *ngIf="!creationInProgress"
       nz-button
       nzType="primary"
       (click)="handleAddComputeUnitModalOk()">

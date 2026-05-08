@@ -18,6 +18,8 @@
  */
 
 import { Component, Input, OnInit } from "@angular/core";
+import { Subscription, interval } from "rxjs";
+import { switchMap } from "rxjs/operators";
 import { ComputingUnitStatusService } from "../../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
 import { DashboardEntry } from "../../../type/dashboard-entry";
 import {
@@ -56,6 +58,24 @@ export class UserComputingUnitComponent implements OnInit {
 
   // variables for creating a computing unit
   addComputeUnitModalVisible = false;
+  // ── progressive creation state shown inside the modal after "Create" ──
+  // Phases come from the backend's /creation-status endpoint. The dashboard
+  // page does not open a WebSocket to the new CU (workflow page does that),
+  // so the flow ends at "Ready".
+  readonly creationPhases = [
+    "Submitted",
+    "Scheduling",
+    "Pulling",
+    "Starting",
+    "Initializing",
+    "Ready",
+  ];
+  creationInProgress = false;
+  creationFailed = false;
+  creationCurrentPhase: string = "Submitted";
+  creationCurrentMessage: string = "";
+  creationCreatedCuid?: number;
+  private creationPollSubscription?: Subscription;
   newComputingUnitName: string = "";
   selectedMemory: string = "";
   selectedCpu: string = "";
@@ -185,17 +205,82 @@ export class UserComputingUnitComponent implements OnInit {
       localUri: this.localComputingUnitUri,
     };
 
+    this.creationInProgress = true;
+    this.creationFailed = false;
+    this.creationCurrentPhase = "Submitted";
+    this.creationCurrentMessage = "Submitting request to the manager…";
+
     this.computingUnitActionsService
       .create(request)
       .pipe(untilDestroyed(this))
       .subscribe({
-        next: () => {
-          this.notificationService.success("Successfully created the new compute unit");
-          this.computingUnitStatusService.refreshComputingUnitList();
+        next: (unit: DashboardWorkflowComputingUnit) => {
+          this.creationCreatedCuid = unit.computingUnit.cuid;
+          this.startCreationProgressTracking(unit.computingUnit.cuid);
         },
-        error: (err: unknown) =>
-          this.notificationService.error(`Failed to start computing unit: ${extractErrorMessage(err)}`),
+        error: (err: unknown) => {
+          this.creationFailed = true;
+          this.creationCurrentMessage = extractErrorMessage(err);
+          this.notificationService.error(`Failed to start computing unit: ${extractErrorMessage(err)}`);
+        },
       });
+  }
+
+  /**
+   * Polls the manager's /creation-status endpoint every second until the pod
+   * is Ready (or fails). On Ready we close the modal and refresh the list;
+   * on Failed we leave the modal open with a red bar so the user can retry.
+   */
+  private startCreationProgressTracking(cuid: number): void {
+    this.creationPollSubscription = interval(1000)
+      .pipe(
+        switchMap(() => this.computingUnitService.getCreationStatus(cuid)),
+        untilDestroyed(this)
+      )
+      .subscribe({
+        next: ({ phase, message }) => {
+          this.creationCurrentPhase = phase;
+          this.creationCurrentMessage = message ?? "";
+          if (phase === "Failed") {
+            this.creationFailed = true;
+            this.creationPollSubscription?.unsubscribe();
+            return;
+          }
+          if (phase === "Ready") {
+            this.creationPollSubscription?.unsubscribe();
+            setTimeout(() => {
+              this.notificationService.success("Successfully created the new compute unit");
+              this.computingUnitStatusService.refreshComputingUnitList();
+              this.addComputeUnitModalVisible = false;
+              this.creationInProgress = false;
+            }, 600);
+          }
+        },
+        error: (err: unknown) => {
+          this.creationCurrentMessage = `Status check failed: ${extractErrorMessage(err)}`;
+        },
+      });
+  }
+
+  isPhaseReached(phase: string): boolean {
+    const currentIdx = this.creationPhases.indexOf(this.creationCurrentPhase);
+    const phaseIdx = this.creationPhases.indexOf(phase);
+    return phaseIdx >= 0 && currentIdx >= phaseIdx;
+  }
+
+  creationProgressPercent(): number {
+    const idx = this.creationPhases.indexOf(this.creationCurrentPhase);
+    if (idx < 0) return 0;
+    return Math.round(((idx + 1) / this.creationPhases.length) * 100);
+  }
+
+  private resetCreationProgress(): void {
+    this.creationInProgress = false;
+    this.creationFailed = false;
+    this.creationCurrentPhase = "Submitted";
+    this.creationCurrentMessage = "";
+    this.creationCreatedCuid = undefined;
+    this.creationPollSubscription?.unsubscribe();
   }
 
   showGpuSelection(): boolean {
@@ -204,15 +289,20 @@ export class UserComputingUnitComponent implements OnInit {
   }
 
   showAddComputeUnitModalVisible(): void {
+    this.resetCreationProgress();
     this.addComputeUnitModalVisible = true;
   }
 
   handleAddComputeUnitModalOk(): void {
+    // Stay open and switch to the progress view; startComputingUnit() handles
+    // closing once the pod hits Ready (or surfaces a Failed phase).
     this.startComputingUnit();
-    this.addComputeUnitModalVisible = false;
   }
 
   handleAddComputeUnitModalCancel(): void {
+    // Dismiss the modal — the CU keeps coming up in the background and will
+    // appear in the list when the next refresh completes.
+    this.creationPollSubscription?.unsubscribe();
     this.addComputeUnitModalVisible = false;
   }
 

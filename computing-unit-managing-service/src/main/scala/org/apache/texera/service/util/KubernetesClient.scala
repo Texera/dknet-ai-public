@@ -181,4 +181,84 @@ object KubernetesClient {
   def deletePod(cuid: Int): Unit = {
     client.pods().inNamespace(namespace).withName(generatePodName(cuid)).delete()
   }
+
+  // Used by the create-CU modal to drive a progressive UI. We translate the
+  // raw pod conditions / container waiting reasons into a small set of UX
+  // phases. The frontend appends a final "Connected" phase once its WS to
+  // the new CU is open — the manager has no visibility into that.
+  //
+  // Phases returned:
+  //   Submitted     — pod object not visible yet (manager just inserted DB row)
+  //   Scheduling    — pod created, no node assigned yet (Karpenter may be
+  //                   provisioning a fresh EC2 instance)
+  //   Pulling       — container is waiting on image pull
+  //   Starting      — node assigned, container being created or initializing
+  //   Initializing  — container running but app not Ready yet (JVM/Pekko/JDBC
+  //                   warm-up)
+  //   Ready         — Ready=True; manager will accept WS on this pod
+  //   Failed        — terminal: ImagePullBackOff, CrashLoopBackOff, etc.
+  def getCreationPhase(cuid: Int): (String, String) = {
+    getPodByName(generatePodName(cuid)) match {
+      case None =>
+        ("Submitted", "Submitting computing unit request")
+      case Some(pod) =>
+        val status = Option(pod.getStatus)
+        val conditions = status
+          .flatMap(s => Option(s.getConditions))
+          .map(_.asScala.toList)
+          .getOrElse(Nil)
+        def cond(t: String): Option[String] =
+          conditions.find(_.getType == t).map(_.getStatus)
+
+        val containerWaiting = status
+          .flatMap(s => Option(s.getContainerStatuses))
+          .map(_.asScala.toList)
+          .getOrElse(Nil)
+          .headOption
+          .flatMap(cs => Option(cs.getState))
+          .flatMap(state => Option(state.getWaiting))
+
+        val terminalReasons = Set(
+          "ImagePullBackOff",
+          "ErrImagePull",
+          "InvalidImageName",
+          "CrashLoopBackOff",
+          "CreateContainerConfigError",
+          "CreateContainerError"
+        )
+
+        containerWaiting.map(_.getReason) match {
+          case Some(reason) if terminalReasons.contains(reason) =>
+            val msg = Option(containerWaiting.get.getMessage).getOrElse(reason)
+            return ("Failed", s"$reason: $msg")
+          case _ => // fall through
+        }
+
+        if (cond("PodScheduled").contains("False"))
+          return (
+            "Scheduling",
+            "Waiting for a node — Karpenter may be provisioning a fresh EC2"
+          )
+
+        // PodScheduled True (or unset on very young pods); look at container.
+        containerWaiting match {
+          case Some(w) if w.getReason == "ContainerCreating" =>
+            return ("Starting", "Creating container on assigned node")
+          case Some(w) if w.getReason == "PodInitializing" =>
+            return ("Starting", "Container initializing")
+          case Some(w) if w.getReason == "ImagePullBackOff" =>
+            return ("Pulling", "Pulling computing-unit image")
+          case Some(w) if w.getReason != null && w.getReason.contains("Pull") =>
+            return ("Pulling", "Pulling computing-unit image")
+          case _ => // container not in waiting state
+        }
+
+        if (cond("Ready").contains("True"))
+          ("Ready", "Computing unit is ready")
+        else if (cond("ContainersReady").contains("True"))
+          ("Initializing", "Application started; waiting for readiness")
+        else
+          ("Initializing", "Application is starting (JVM, actor system, JDBC)")
+    }
+  }
 }

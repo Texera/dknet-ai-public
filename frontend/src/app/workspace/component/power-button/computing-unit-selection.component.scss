@@ -358,3 +358,18 @@
     outline: none;
   }
 }
+
+.create-compute-unit-progress {
+  padding: 8px 4px 4px 4px;
+
+  .creation-current-message {
+    margin: 8px 0 16px 0;
+    font-size: 13px;
+    color: #595959;
+
+    .phase-label {
+      font-weight: 600;
+      color: #1f1f1f;
+    }
+  }
+}

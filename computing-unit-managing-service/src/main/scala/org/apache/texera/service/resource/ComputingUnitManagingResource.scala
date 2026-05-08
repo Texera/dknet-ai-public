@@ -1021,4 +1021,36 @@ class ComputingUnitManagingResource {
     val computingUnit = getComputingUnitByCuid(context, cuid.toInt)
     getComputingUnitResourceLimit(computingUnit)
   }
+
+  // Drives the create-CU modal's progressive view. Returns a coarse phase
+  // ("Submitted" → "Scheduling" → "Starting"/"Pulling" → "Initializing" →
+  // "Ready"/"Failed") plus a human-readable message. The frontend polls this
+  // until phase == Ready (or Failed) and then waits for its WS to connect.
+  @GET
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  @Produces(Array(MediaType.APPLICATION_JSON))
+  @Path("/{cuid}/creation-status")
+  def getCreationStatus(
+      @PathParam("cuid") cuid: Integer,
+      @Auth user: SessionUser
+  ): Map[String, String] = {
+    if (!userOwnComputingUnit(context, cuid, user.getUid)) {
+      throw new BadRequestException("User has no access to the computing unit")
+    }
+    val unit = getComputingUnitByCuid(context, cuid)
+    unit.getType match {
+      case WorkflowComputingUnitTypeEnum.kubernetes =>
+        val (phase, message) = KubernetesClient.getCreationPhase(cuid)
+        Map("phase" -> phase, "message" -> message)
+      case WorkflowComputingUnitTypeEnum.local =>
+        Map("phase" -> "Ready", "message" -> "Local computing unit")
+      case WorkflowComputingUnitTypeEnum.aws =>
+        Map(
+          "phase" -> "Ready",
+          "message" -> "AWS EC2 launch complete (instance state not polled here)"
+        )
+      case _ =>
+        Map("phase" -> "Submitted", "message" -> "Unknown computing-unit type")
+    }
+  }
 }

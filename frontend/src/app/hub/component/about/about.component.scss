@@ -17,86 +17,153 @@
  * under the License.
  */
 
-.about-page-container {
-  overflow-y: auto;
+.landing-root {
+  width: 100%;
   height: 100%;
-  padding: 0 133px;
+  overflow-y: auto;
+  background-color: #0d1418;
 }
 
-.content {
-  margin-top: 40px;
-  max-width: 1600px;
+.hero {
+  position: relative;
   width: 100%;
-  text-align: left;
+  min-height: 100%;
+  background-image: url("/assets/landing/working-person.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.content > h1 {
-  font-size: 40px;
-  font-weight: bold;
-  margin: 0;
-}
-
-.content > h2 {
-  font-size: 28px;
-  font-weight: bold;
-  margin-top: 10px;
-}
-
-.content > p {
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 1.8;
-  margin-bottom: 10px;
-}
-
-#logo {
-  height: 70px;
-  padding: 0;
-  margin-right: 14px;
-}
-
-.workflow-gui-screenshot {
-  width: 100%;
-  height: auto;
-}
-
-.login-container {
+.hero-overlay {
   position: absolute;
-  top: 140px;
-  right: 0;
-  max-width: 350px;
+  inset: 0;
+  background: linear-gradient(110deg,
+    rgba(8, 22, 36, 0.78) 0%,
+    rgba(8, 22, 36, 0.55) 45%,
+    rgba(8, 22, 36, 0.15) 70%,
+    rgba(8, 22, 36, 0.05) 100%);
+  pointer-events: none;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  background: white;
+  max-width: 1400px;
+  padding: 80px 80px;
+  gap: 40px;
 }
 
-.text-content {
-  width: 70%;
+.hero-text {
+  flex: 1 1 600px;
+  max-width: 640px;
+  color: #fff;
+}
+
+.hero-title {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.2px;
+  margin: 0 0 28px 0;
+  color: #fff;
+}
+
+.hero-body {
   font-size: 16px;
-  line-height: 1.8;
-  font-weight: 400;
+  line-height: 1.75;
+  color: #b6e0ff;
+  margin: 0 0 36px 0;
 }
 
-.learn-more-section {
-  margin-top: 10px;
-  text-align: left;
+.hero-body a {
+  color: #4ec3ff;
+  text-decoration: none;
+  font-weight: 500;
+}
 
-  p {
-    font-size: 16px;
-    line-height: 1.8;
-    margin-bottom: 10px;
+.hero-body a:hover {
+  text-decoration: underline;
+}
 
-    a {
-      color: #007acc;
-      text-decoration: none;
-    }
+.hero-cta {
+  display: inline-block;
+  background: #1f8fe8;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 14px 34px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(31, 143, 232, 0.35);
+  transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
 
-    a:hover {
-      text-decoration: underline;
-    }
+.hero-cta:hover {
+  background: #1976d2;
+  box-shadow: 0 8px 24px rgba(25, 118, 210, 0.45);
+}
 
-    img {
-      margin-left: 5px;
-      vertical-align: middle;
-    }
+.hero-cta:active {
+  transform: translateY(1px);
+}
+
+.hero-logo {
+  flex: 0 0 auto;
+  width: 360px;
+  max-width: 40%;
+  height: auto;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45));
+}
+
+.login-section {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px;
+  background: #fff;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+@media (max-width: 1024px) {
+  .hero-content {
+    padding: 60px 40px;
+  }
+  .hero-title {
+    font-size: 36px;
+  }
+  .hero-logo {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-content {
+    flex-direction: column-reverse;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .hero-text {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
+  .hero-title {
+    font-size: 30px;
+  }
+  .hero-logo {
+    width: 220px;
+    max-width: 60%;
   }
 }

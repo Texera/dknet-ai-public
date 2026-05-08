@@ -18,7 +18,9 @@
  */
 
 import { ChangeDetectorRef, Component, OnInit, TemplateRef, ViewChild } from "@angular/core";
-import { take } from "rxjs/operators";
+import { Subscription, interval } from "rxjs";
+import { filter, switchMap, take } from "rxjs/operators";
+import { WorkflowWebsocketService } from "../../service/workflow-websocket/workflow-websocket.service";
 import { WorkflowComputingUnitManagingService } from "../../../common/service/computing-unit/workflow-computing-unit/workflow-computing-unit-managing.service";
 import {
   DashboardWorkflowComputingUnit,
@@ -77,6 +79,26 @@ export class ComputingUnitSelectionComponent implements OnInit {
 
   // variables for creating a computing unit
   addComputeUnitModalVisible = false;
+  // ── progressive creation state shown inside the modal after "Create" ──
+  // The full ordered phase list the UI walks through. The first 6 phases
+  // come from the backend's /creation-status endpoint; "Connected" is set
+  // by the frontend once the workflow WebSocket to the new CU is open.
+  readonly creationPhases = [
+    "Submitted",
+    "Scheduling",
+    "Pulling",
+    "Starting",
+    "Initializing",
+    "Ready",
+    "Connected",
+  ];
+  creationInProgress = false;
+  creationFailed = false;
+  creationCurrentPhase: string = "Submitted";
+  creationCurrentMessage: string = "";
+  creationCreatedCuid?: number;
+  private creationPollSubscription?: Subscription;
+  private creationWsSubscription?: Subscription;
   newComputingUnitName: string = "";
   selectedMemory: string = "";
   selectedCpu: string = "";
@@ -144,7 +166,8 @@ export class ComputingUnitSelectionComponent implements OnInit {
     private workflowExecutionsService: WorkflowExecutionsService,
     private modalService: NzModalService,
     private cdr: ChangeDetectorRef,
-    private computingUnitActionsService: ComputingUnitActionsService
+    private computingUnitActionsService: ComputingUnitActionsService,
+    private workflowWebsocketService: WorkflowWebsocketService
   ) {}
 
   ngOnInit(): void {
@@ -330,16 +353,46 @@ export class ComputingUnitSelectionComponent implements OnInit {
   }
 
   showAddComputeUnitModalVisible(): void {
+    this.resetCreationProgress();
     this.addComputeUnitModalVisible = true;
   }
 
   handleAddComputeUnitModalOk(): void {
+    // Stay open and switch to the progress view; startComputingUnit() handles
+    // closing once the WebSocket to the new CU is connected (or on error).
     this.startComputingUnit();
-    this.addComputeUnitModalVisible = false;
   }
 
   handleAddComputeUnitModalCancel(): void {
+    // Cancel during creation only dismisses the modal — the CU keeps coming
+    // up in the background and shows up in the dashboard list when ready.
+    this.creationPollSubscription?.unsubscribe();
+    this.creationWsSubscription?.unsubscribe();
     this.addComputeUnitModalVisible = false;
+  }
+
+  private resetCreationProgress(): void {
+    this.creationInProgress = false;
+    this.creationFailed = false;
+    this.creationCurrentPhase = "Submitted";
+    this.creationCurrentMessage = "";
+    this.creationCreatedCuid = undefined;
+    this.creationPollSubscription?.unsubscribe();
+    this.creationWsSubscription?.unsubscribe();
+  }
+
+  // True for phases that are at or before the currently active phase, used
+  // by the template to mark step bullets in nz-steps as completed/active.
+  isPhaseReached(phase: string): boolean {
+    const currentIdx = this.creationPhases.indexOf(this.creationCurrentPhase);
+    const phaseIdx = this.creationPhases.indexOf(phase);
+    return phaseIdx >= 0 && currentIdx >= phaseIdx;
+  }
+
+  creationProgressPercent(): number {
+    const idx = this.creationPhases.indexOf(this.creationCurrentPhase);
+    if (idx < 0) return 0;
+    return Math.round(((idx + 1) / this.creationPhases.length) * 100);
   }
 
   isShmTooLarge(): boolean {
@@ -413,16 +466,83 @@ export class ComputingUnitSelectionComponent implements OnInit {
       localUri: this.localComputingUnitUri,
     };
 
+    this.creationInProgress = true;
+    this.creationFailed = false;
+    this.creationCurrentPhase = "Submitted";
+    this.creationCurrentMessage = "Submitting request to the manager…";
+
     this.computingUnitActionsService
       .create(request)
       .pipe(untilDestroyed(this))
       .subscribe({
         next: (unit: DashboardWorkflowComputingUnit) => {
-          this.notificationService.success("Successfully created the new compute unit");
-          this.selectComputingUnit(this.workflowId, unit.computingUnit.cuid);
+          this.creationCreatedCuid = unit.computingUnit.cuid;
+          this.startCreationProgressTracking(unit);
         },
-        error: (err: unknown) =>
-          this.notificationService.error(`Failed to start computing unit: ${extractErrorMessage(err)}`),
+        error: (err: unknown) => {
+          this.creationFailed = true;
+          this.creationCurrentMessage = extractErrorMessage(err);
+          this.notificationService.error(`Failed to start computing unit: ${extractErrorMessage(err)}`);
+        },
+      });
+  }
+
+  /**
+   * Drives the progressive modal once the manager has accepted the create
+   * request. Polls /creation-status every second until phase==Ready, then
+   * triggers selectComputingUnit (which opens the workflow WebSocket) and
+   * waits for the WS to connect before marking "Connected" and closing the
+   * modal. Errors from any step surface as a "Failed" phase.
+   */
+  private startCreationProgressTracking(unit: DashboardWorkflowComputingUnit): void {
+    const cuid = unit.computingUnit.cuid;
+
+    this.creationPollSubscription = interval(1000)
+      .pipe(
+        switchMap(() => this.computingUnitService.getCreationStatus(cuid)),
+        untilDestroyed(this)
+      )
+      .subscribe({
+        next: ({ phase, message }) => {
+          this.creationCurrentPhase = phase;
+          this.creationCurrentMessage = message ?? "";
+          if (phase === "Failed") {
+            this.creationFailed = true;
+            this.creationPollSubscription?.unsubscribe();
+            return;
+          }
+          if (phase === "Ready") {
+            this.creationPollSubscription?.unsubscribe();
+            this.selectComputingUnit(this.workflowId, cuid);
+            this.waitForWebsocketConnection(cuid);
+          }
+        },
+        error: (err: unknown) => {
+          // Transient backend errors during polling — keep the user informed
+          // but don't tear down the flow; next tick may recover.
+          this.creationCurrentMessage = `Status check failed: ${extractErrorMessage(err)}`;
+        },
+      });
+  }
+
+  private waitForWebsocketConnection(cuid: number): void {
+    // Step the UI through "Connected" once the workflow WS is up. We close
+    // the modal a beat later so the user sees the full progress complete.
+    this.creationWsSubscription = this.workflowWebsocketService
+      .getConnectionStatusStream()
+      .pipe(
+        filter(connected => connected),
+        take(1),
+        untilDestroyed(this)
+      )
+      .subscribe(() => {
+        this.creationCurrentPhase = "Connected";
+        this.creationCurrentMessage = "Connected to the new computing unit";
+        setTimeout(() => {
+          this.notificationService.success("Successfully created the new compute unit");
+          this.addComputeUnitModalVisible = false;
+          this.creationInProgress = false;
+        }, 600);
       });
   }
 

@@ -236,6 +236,18 @@ export class WorkflowComputingUnitManagingService {
   }
 
   /**
+   * Coarse creation-phase poll used by the create-CU modal to drive a
+   * progressive UI. Manager returns one of: Submitted, Scheduling, Pulling,
+   * Starting, Initializing, Ready, Failed. The frontend appends "Connected"
+   * once the workflow WebSocket to the new CU is open.
+   */
+  public getCreationStatus(cuid: number): Observable<{ phase: string; message: string }> {
+    return this.http.get<{ phase: string; message: string }>(
+      `${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_BASE_URL}/${cuid}/creation-status`
+    );
+  }
+
+  /**
    * Rename a computing unit.
    * @param cuid The ID of the computing unit to rename.
    * @param name The new name for the computing unit.
