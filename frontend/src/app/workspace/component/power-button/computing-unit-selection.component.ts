@@ -78,6 +78,7 @@ import { FormsModule } from "@angular/forms";
 import { NzSliderComponent } from "ng-zorro-antd/slider";
 import { NzAlertComponent } from "ng-zorro-antd/alert";
 import { NzCollapseComponent, NzCollapsePanelComponent } from "ng-zorro-antd/collapse";
+import { NzStepsComponent, NzStepComponent } from "ng-zorro-antd/steps";
 
 type PveDraft = {
   name: string;
@@ -123,6 +124,8 @@ type PveDraft = {
     NzModalContentDirective,
     NzCollapseComponent,
     NzCollapsePanelComponent,
+    NzStepsComponent,
+    NzStepComponent,
     DecimalPipe,
     TitleCasePipe,
   ],

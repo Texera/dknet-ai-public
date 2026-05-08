@@ -57,6 +57,8 @@ import { NzInputDirective } from "ng-zorro-antd/input";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import { NzSliderComponent } from "ng-zorro-antd/slider";
 import { NzAlertComponent } from "ng-zorro-antd/alert";
+import { NzProgressComponent } from "ng-zorro-antd/progress";
+import { NzStepsComponent, NzStepComponent } from "ng-zorro-antd/steps";
 
 @UntilDestroy()
 @Component({
@@ -85,6 +87,9 @@ import { NzAlertComponent } from "ng-zorro-antd/alert";
     NzTooltipDirective,
     NzSliderComponent,
     NzAlertComponent,
+    NzProgressComponent,
+    NzStepsComponent,
+    NzStepComponent,
     TitleCasePipe,
   ],
 })
