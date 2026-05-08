@@ -35,6 +35,27 @@ spec:
       backendRefs:
         - name: workflow-computing-unit-manager-svc
           port: 8888
+    {{- if .Values.agentService.enabled }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/agents
+      backendRefs:
+        - name: {{ .Release.Name }}-agent-service
+          port: 3001
+    {{- end }}
+    {{- if .Values.litellm.enabled }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/models
+        - path:
+            type: PathPrefix
+            value: /api/chat/completion
+      backendRefs:
+        - name: {{ .Release.Name }}-litellm
+          port: 4000
+    {{- end }}
     - matches:
         - path:
             type: PathPrefix

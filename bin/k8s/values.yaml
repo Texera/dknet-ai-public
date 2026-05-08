@@ -319,6 +319,29 @@ computingUnitWarmPool:
     cpu: "1"
     memory: "2Gi"
 
+# LiteLLM proxy. When enabled, deploys a litellm container that fronts
+# upstream LLM providers (Anthropic, OpenAI, ...) and exposes an OpenAI-
+# compatible API for the agent service. Disabled by default.
+litellm:
+  enabled: false
+  image: ghcr.io/berriai/litellm:main-stable
+  numOfPods: 1
+  masterKey: "sk-litellm-master-key"
+  providerApiKeys: {}
+  config: |
+    litellm_settings:
+      drop_params: true
+    model_list: []
+
+# Agent service (chatbot/copilot). When enabled, deploys the bun-based
+# agent-service that orchestrates LLM calls via LiteLLM. Disabled by default.
+agentService:
+  enabled: false
+  numOfPods: 1
+  imageName: agent-service
+  env:
+    llmApiKey: "sk-litellm-master-key"
+
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml
 
