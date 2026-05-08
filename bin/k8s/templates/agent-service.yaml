@@ -44,8 +44,12 @@ spec:
               value: "3001"
             - name: LLM_API_KEY
               value: {{ .Values.agentService.env.llmApiKey | quote }}
+            # LLM_ENDPOINT must point at the access-control-service which
+            # exposes /api/chat/{path:.*} and strips /api/ before proxying
+            # to litellm. agent-service's OpenAI SDK appends /chat/completions
+            # to ${LLM_ENDPOINT}/api, so going direct to litellm 404s.
             - name: LLM_ENDPOINT
-              value: "http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}:4000"
+              value: "http://{{ .Release.Name }}-{{ .Values.accessControlService.name }}-svc.{{ .Release.Namespace }}:{{ .Values.accessControlService.service.port }}"
             - name: TEXERA_DASHBOARD_SERVICE_ENDPOINT
               value: "http://{{ .Values.webserver.name }}-svc.{{ .Release.Namespace }}:{{ .Values.webserver.service.port }}"
             - name: WORKFLOW_COMPILING_SERVICE_ENDPOINT
