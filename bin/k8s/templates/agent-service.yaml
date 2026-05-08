@@ -52,8 +52,6 @@ spec:
               value: "http://workflow-compiling-service-svc.{{ .Release.Namespace }}:9090"
             - name: WORKFLOW_EXECUTION_SERVICE_ENDPOINT
               value: "http://localhost:8085"
-            - name: LOG_PRETTY
-              value: "false"
             - name: TEXERA_SERVICE_LOG_LEVEL
               value: "INFO"
           resources:
