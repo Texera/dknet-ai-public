@@ -24,13 +24,16 @@ import { UserService } from "src/app/common/service/user/user.service";
 import { BehaviorSubject } from "rxjs";
 import { GuiConfigService } from "../../../common/service/gui-config.service";
 import { DASHBOARD_USER_WORKFLOW } from "../../../app-routing.constant";
+import { NzRowDirective, NzColDirective } from "ng-zorro-antd/grid";
+import { NgIf, AsyncPipe } from "@angular/common";
+import { LocalLoginComponent } from "./local-login/local-login.component";
 
 @UntilDestroy()
 @Component({
   selector: "texera-about",
   templateUrl: "./about.component.html",
   styleUrls: ["./about.component.scss"],
-  standalone: false,
+  imports: [NzRowDirective, NzColDirective, NgIf, LocalLoginComponent, AsyncPipe],
 })
 export class AboutComponent implements OnInit {
   @ViewChild("loginSection") loginSectionRef?: ElementRef<HTMLElement>;
