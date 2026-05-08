@@ -47,7 +47,7 @@ spec:
             - name: LLM_ENDPOINT
               value: "http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}:4000"
             - name: TEXERA_DASHBOARD_SERVICE_ENDPOINT
-              value: "http://{{ .Release.Name }}-{{ .Values.webserver.name }}.{{ .Release.Namespace }}:{{ .Values.webserver.service.port }}"
+              value: "http://{{ .Values.webserver.name }}-svc.{{ .Release.Namespace }}:{{ .Values.webserver.service.port }}"
             - name: WORKFLOW_COMPILING_SERVICE_ENDPOINT
               value: "http://workflow-compiling-service-svc.{{ .Release.Namespace }}:9090"
             - name: WORKFLOW_EXECUTION_SERVICE_ENDPOINT
