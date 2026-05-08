@@ -50,6 +50,15 @@ spec:
               value: {{ .Values.workflowComputingUnitPool.name }}
             - name: KUBERNETES_COMPUTE_UNIT_POOL_NAMESPACE
               value: {{ .Values.workflowComputingUnitPool.namespace }}
+            {{- if .Values.litellm.enabled }}
+            - name: LITELLM_BASE_URL
+              value: "http://{{ .Release.Name }}-litellm.{{ .Release.Namespace }}:4000"
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-litellm-secret
+                  key: master-key
+            {{- end }}
             {{- range .Values.texeraEnvVars }}
             - name: {{ .name }}
               value: "{{ .value }}"

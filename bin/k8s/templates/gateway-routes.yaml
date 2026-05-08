@@ -51,10 +51,10 @@ spec:
             value: /api/models
         - path:
             type: PathPrefix
-            value: /api/chat/completion
+            value: /api/chat
       backendRefs:
-        - name: {{ .Release.Name }}-litellm
-          port: 4000
+        - name: texera-{{ .Values.accessControlService.name }}-svc
+          port: {{ .Values.accessControlService.service.port }}
     {{- end }}
     - matches:
         - path:
