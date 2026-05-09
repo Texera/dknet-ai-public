@@ -17,6 +17,11 @@
  * under the License.
  */
 
+:host {
+  --parallax-x: 0px;
+  --parallax-y: 0px;
+}
+
 .landing-root {
   width: 100%;
   height: 100%;
@@ -28,14 +33,364 @@
   position: relative;
   width: 100%;
   min-height: 100%;
-  background-image: url("/assets/landing/working-person.jpg");
+  // Prefer WebP (≈200 KB) over the legacy PNG fallback. image-set lets the
+  // browser pick whichever it can decode.
+  background-image: image-set(
+    url("/assets/landing/background.webp") type("image/webp"),
+    url("/assets/landing/background.png")  type("image/png")
+  );
+  background-color: #0d1418; // shows under the bg until the image arrives
   background-size: cover;
-  background-position: center;
+  background-position: calc(50% + var(--parallax-x)) calc(50% + var(--parallax-y));
   background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  transition: background-position 200ms ease-out;
+}
+
+// ---------------------------------------------------------------------
+// Animation layer: data-flow streams + AI hub aurora + drifting motes.
+// Sits between the bg image and the hero-overlay gradient so the overlay
+// still lifts the text contrast over busy zones of the animation.
+// ---------------------------------------------------------------------
+.hero-anim-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  // Counter-drift to bg → parallax depth.
+  transform: translate3d(calc(var(--parallax-x) * -0.6), calc(var(--parallax-y) * -0.6), 0);
+  transition: transform 200ms ease-out;
+  will-change: transform;
+}
+
+// SVG covers the same frame as the bg.
+.flow-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+// Faint trails for the trajectories — subtle so the bg shows through.
+.flow-path {
+  fill: none;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  opacity: 0.55;
+  filter: drop-shadow(0 0 3px currentColor);
+
+  &--cyan {
+    stroke: rgba(78, 195, 255, 0.35);
+    color: rgba(78, 195, 255, 0.6);
+  }
+
+  &--magenta {
+    stroke: rgba(181, 75, 255, 0.32);
+    color: rgba(181, 75, 255, 0.6);
+  }
+}
+
+.flow-particle circle {
+  filter: drop-shadow(0 0 8px rgba(180, 230, 255, 0.85));
+}
+
+// AI hub aurora — concentric pulse + counter-rotating rings positioned over
+// the AI node in the bg (~top-right corner of the AI/ML graphic).
+.ai-hub {
+  position: absolute;
+  top: 14%;
+  right: 16%;
+  width: 220px;
+  height: 220px;
+  transform: translate(50%, -50%);
+  pointer-events: none;
+}
+
+.ai-hub-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(78, 195, 255, 0.45) 0%,
+    rgba(78, 195, 255, 0.15) 35%,
+    rgba(78, 195, 255, 0) 70%
+  );
+  animation: aiPulse 4s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50%      { transform: scale(1.3); opacity: 0.95; }
+}
+
+.ai-hub-ring {
+  position: absolute;
+  border-style: solid;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ai-hub-ring--outer {
+  inset: -28px;
+  border-width: 1px;
+  border-color: rgba(78, 195, 255, 0.15);
+  border-top-color: rgba(78, 195, 255, 0.95);
+  animation: aiRotate 9s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(78, 195, 255, 0.6));
+}
+
+.ai-hub-ring--inner {
+  inset: 14px;
+  border-width: 1px;
+  border-color: rgba(181, 75, 255, 0.16);
+  border-bottom-color: rgba(181, 75, 255, 0.85);
+  animation: aiRotate 14s linear infinite reverse;
+  filter: drop-shadow(0 0 4px rgba(181, 75, 255, 0.55));
+}
+
+@keyframes aiRotate { to { transform: rotate(360deg); } }
+
+// Drifting illuminated motes — like data dust caught in the network's glow.
+.mote {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: rgba(200, 235, 255, 0.85);
+  border-radius: 50%;
+  filter: blur(0.4px) drop-shadow(0 0 6px rgba(180, 230, 255, 0.85));
+  animation-name: moteDrift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes moteDrift {
+  0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+  10%  { opacity: 0.9; }
+  85%  { opacity: 0.55; }
+  100% { transform: translate3d(var(--mote-dx, 30px), -110vh, 0); opacity: 0; }
+}
+
+// Hero text: staggered fade-up on initial render.
+.hero-content { position: relative; z-index: 2; }
+
+.hero-title { animation: heroIn 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 120ms both; }
+.hero-body  { animation: heroIn 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 320ms both; }
+.hero-cta   { animation: heroIn 750ms cubic-bezier(0.22, 0.61, 0.36, 1) 520ms both; }
+
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+// ---------------------------------------------------------------------
+// Boot splash. Pure CSS so it paints before the bg image downloads.
+// Sits over the hero on first load; TS removes the .booting class once
+// both (a) the bg image has loaded and (b) the minimum splash duration
+// has elapsed, at which point this layer fades out and the hero takes
+// the stage with its own staggered entrance animations.
+// ---------------------------------------------------------------------
+.hero-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background:
+    radial-gradient(ellipse at center, #1a2b3f 0%, #0d1418 60%, #07090c 100%);
+  pointer-events: none;
+  transition: opacity 800ms ease-out, visibility 800ms ease-out;
+}
+
+// The animation keyframes are inert by default; the .booting class on the
+// host enables them, and removing the class causes the splash to fade out.
+:host(:not(.booted)) .hero-splash { animation: none; }
+
+:host(.booted) .hero-splash {
+  opacity: 0;
+  visibility: hidden;
+}
+
+// While booting, the hero content underneath is held back so the splash
+// owns the frame; once booted, the hero's own entrance kicks in.
+:host(:not(.booted)) .hero-content { opacity: 0; }
+
+.splash-orb {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.splash-orb-core {
+  position: absolute;
+  inset: 25%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #ffffff 0%,
+    #cfe9ff 25%,
+    #4ec3ff 60%,
+    rgba(78, 195, 255, 0) 100%
+  );
+  filter: drop-shadow(0 0 28px rgba(78, 195, 255, 0.85))
+          drop-shadow(0 0 60px rgba(78, 195, 255, 0.45));
+  transform: scale(0);
+  animation:
+    orbBloom 900ms cubic-bezier(0.22, 0.61, 0.36, 1) 200ms forwards,
+    orbBreath 2.4s ease-in-out 1100ms infinite;
+}
+
+@keyframes orbBloom {
+  0%   { transform: scale(0);   opacity: 0;   filter: blur(8px); }
+  60%  { transform: scale(1.18); opacity: 1;  filter: blur(0); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+@keyframes orbBreath {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%      { transform: scale(1.12); opacity: 0.9; }
+}
+
+// Counter-rotating halo arcs around the orb, mirroring the in-page AI hub.
+.splash-orb-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  opacity: 0;
+}
+
+.splash-orb-halo--outer {
+  border-top-color: rgba(78, 195, 255, 0.95);
+  border-right-color: rgba(78, 195, 255, 0.4);
+  filter: drop-shadow(0 0 6px rgba(78, 195, 255, 0.7));
+  animation:
+    haloAppear 700ms ease-out 600ms forwards,
+    haloSpin 5s linear 600ms infinite;
+}
+
+.splash-orb-halo--inner {
+  inset: 18%;
+  border-bottom-color: rgba(181, 75, 255, 0.95);
+  border-left-color: rgba(181, 75, 255, 0.4);
+  filter: drop-shadow(0 0 6px rgba(181, 75, 255, 0.65));
+  animation:
+    haloAppear 700ms ease-out 800ms forwards,
+    haloSpinReverse 7s linear 800ms infinite;
+}
+
+@keyframes haloAppear { to { opacity: 1; } }
+@keyframes haloSpin   { to { transform: rotate(360deg); } }
+@keyframes haloSpinReverse { to { transform: rotate(-360deg); } }
+
+// Concentric pulse rings emanating outward from the orb. Three rings,
+// staggered, repeating — feels like data broadcast.
+.splash-orb-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(78, 195, 255, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  animation: pulseEmit 2.4s ease-out infinite;
+}
+.splash-orb-pulse--p1 { animation-delay: 700ms; }
+.splash-orb-pulse--p2 { animation-delay: 1500ms; border-color: rgba(181, 75, 255, 0.75); }
+.splash-orb-pulse--p3 { animation-delay: 2300ms; }
+
+@keyframes pulseEmit {
+  0%   { transform: scale(0.9); opacity: 0.85; }
+  60%  { opacity: 0.25; }
+  100% { transform: scale(4.5); opacity: 0; }
+}
+
+// Wordmark below the orb.
+.splash-brand {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 8px;
+  color: #cfe9ff;
+  text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(10px);
+  filter: drop-shadow(0 0 12px rgba(78, 195, 255, 0.4));
+  animation: brandFade 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 1000ms forwards;
+
+  .dot {
+    display: inline-block;
+    margin: 0 6px;
+    color: #4ec3ff;
+    text-shadow: 0 0 10px rgba(78, 195, 255, 0.9);
+    animation: dotPulse 1.4s ease-in-out 1400ms infinite;
+  }
+}
+
+@keyframes brandFade {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.9); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+
+// Subtle scan line under the wordmark, suggesting "loading."
+.splash-scan {
+  width: 240px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(78, 195, 255, 0) 0%,
+    rgba(78, 195, 255, 0.8) 50%,
+    rgba(78, 195, 255, 0) 100%);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  background-position: -50% 0;
+  opacity: 0;
+  animation:
+    scanFade 600ms ease-out 1200ms forwards,
+    scanSweep 1.6s ease-in-out 1400ms infinite;
+}
+
+@keyframes scanFade { to { opacity: 1; } }
+@keyframes scanSweep {
+  0%   { background-position: -50% 0; }
+  100% { background-position: 150% 0; }
+}
+
+// Respect reduced-motion preferences — flatten everything.
+@media (prefers-reduced-motion: reduce) {
+  .hero { transition: none; }
+  .hero-anim-layer,
+  .ai-hub-glow,
+  .ai-hub-ring,
+  .flow-particle circle,
+  .mote,
+  .hero-title,
+  .hero-body,
+  .hero-cta {
+    animation: none !important;
+    transition: none !important;
+  }
+  .mote { display: none; }
+  .splash-orb-core,
+  .splash-orb-halo,
+  .splash-orb-pulse,
+  .splash-brand,
+  .splash-brand .dot,
+  .splash-scan {
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .hero-overlay {

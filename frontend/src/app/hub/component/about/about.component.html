@@ -19,7 +19,251 @@
 
 <div class="landing-root">
   <section class="hero">
+    <!-- Boot splash. Pure CSS, paints before the bg image even starts
+         downloading. Removed (faded out) once the bg is ready and the
+         minimum splash duration has elapsed (handled in TS). -->
+    <div
+      class="hero-splash"
+      aria-hidden="true">
+      <div class="splash-orb">
+        <span class="splash-orb-pulse splash-orb-pulse--p1"></span>
+        <span class="splash-orb-pulse splash-orb-pulse--p2"></span>
+        <span class="splash-orb-pulse splash-orb-pulse--p3"></span>
+        <span class="splash-orb-halo splash-orb-halo--outer"></span>
+        <span class="splash-orb-halo splash-orb-halo--inner"></span>
+        <span class="splash-orb-core"></span>
+      </div>
+      <div class="splash-brand">dkNET<span class="dot">·</span>AI</div>
+      <div class="splash-scan"></div>
+    </div>
+
     <div class="hero-overlay"></div>
+
+    <!-- Animation layer: data-flow streams + AI hub aurora + drifting motes -->
+    <div
+      class="hero-anim-layer"
+      aria-hidden="true">
+      <svg
+        class="flow-svg"
+        viewBox="0 0 1600 900"
+        preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient
+            id="dotCyan"
+            cx="50%"
+            cy="50%"
+            r="50%">
+            <stop
+              offset="0%"
+              stop-color="#cfe9ff"
+              stop-opacity="1" />
+            <stop
+              offset="40%"
+              stop-color="#4ec3ff"
+              stop-opacity="0.95" />
+            <stop
+              offset="100%"
+              stop-color="#4ec3ff"
+              stop-opacity="0" />
+          </radialGradient>
+          <radialGradient
+            id="dotMagenta"
+            cx="50%"
+            cy="50%"
+            r="50%">
+            <stop
+              offset="0%"
+              stop-color="#fbe6ff"
+              stop-opacity="1" />
+            <stop
+              offset="40%"
+              stop-color="#b54bff"
+              stop-opacity="0.95" />
+            <stop
+              offset="100%"
+              stop-color="#b54bff"
+              stop-opacity="0" />
+          </radialGradient>
+
+          <!-- Trajectories: paths roughly extend the bg's flow lines.
+               Origins are biology/wet-lab zones, sinks are the AI hub
+               (top-right) and outward to the cloud/skyline. -->
+          <path
+            id="flow1"
+            d="M120,520 C420,420 800,360 1190,200" />
+          <path
+            id="flow2"
+            d="M780,470 C940,360 1080,260 1190,200" />
+          <path
+            id="flow3"
+            d="M1090,790 C1140,580 1180,380 1200,210" />
+          <path
+            id="flow4"
+            d="M1190,200 C1370,260 1480,420 1530,640" />
+          <path
+            id="flow5"
+            d="M1190,200 C1080,420 970,610 1280,780" />
+          <path
+            id="flow6"
+            d="M1190,200 C840,210 470,310 90,420" />
+          <path
+            id="flow7"
+            d="M1320,510 C1100,400 880,500 660,380" />
+        </defs>
+
+        <!-- Faint visible trails for the trajectories -->
+        <use
+          href="#flow1"
+          class="flow-path flow-path--cyan" />
+        <use
+          href="#flow2"
+          class="flow-path flow-path--cyan" />
+        <use
+          href="#flow3"
+          class="flow-path flow-path--magenta" />
+        <use
+          href="#flow4"
+          class="flow-path flow-path--cyan" />
+        <use
+          href="#flow5"
+          class="flow-path flow-path--magenta" />
+        <use
+          href="#flow6"
+          class="flow-path flow-path--cyan" />
+        <use
+          href="#flow7"
+          class="flow-path flow-path--magenta" />
+
+        <!-- Travelling glow particles. Each path carries 2 dots offset in time. -->
+        <g class="flow-particle">
+          <circle
+            r="4"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="6s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow1" /></animateMotion>
+          </circle>
+          <circle
+            r="3"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="6s"
+              begin="3s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow1" /></animateMotion>
+          </circle>
+
+          <circle
+            r="4"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="5s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow2" /></animateMotion>
+          </circle>
+          <circle
+            r="3"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="5s"
+              begin="2.5s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow2" /></animateMotion>
+          </circle>
+
+          <circle
+            r="4"
+            fill="url(#dotMagenta)">
+            <animateMotion
+              dur="7s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow3" /></animateMotion>
+          </circle>
+          <circle
+            r="3"
+            fill="url(#dotMagenta)">
+            <animateMotion
+              dur="7s"
+              begin="3.5s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow3" /></animateMotion>
+          </circle>
+
+          <circle
+            r="4"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="8s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow4" /></animateMotion>
+          </circle>
+          <circle
+            r="3"
+            fill="url(#dotMagenta)">
+            <animateMotion
+              dur="8s"
+              begin="4s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow4" /></animateMotion>
+          </circle>
+
+          <circle
+            r="4"
+            fill="url(#dotMagenta)">
+            <animateMotion
+              dur="9s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow5" /></animateMotion>
+          </circle>
+
+          <circle
+            r="4"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="10s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow6" /></animateMotion>
+          </circle>
+          <circle
+            r="3"
+            fill="url(#dotCyan)">
+            <animateMotion
+              dur="10s"
+              begin="5s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow6" /></animateMotion>
+          </circle>
+
+          <circle
+            r="3"
+            fill="url(#dotMagenta)">
+            <animateMotion
+              dur="6.5s"
+              repeatCount="indefinite"
+              rotate="auto"><mpath href="#flow7" /></animateMotion>
+          </circle>
+        </g>
+      </svg>
+
+      <!-- Aurora around the AI node (top-right of bg) -->
+      <div class="ai-hub">
+        <span class="ai-hub-glow"></span>
+        <span class="ai-hub-ring ai-hub-ring--outer"></span>
+        <span class="ai-hub-ring ai-hub-ring--inner"></span>
+      </div>
+
+      <!-- Drifting illuminated motes -->
+      <span
+        *ngFor="let m of motes"
+        class="mote"
+        [style.left.%]="m.x"
+        [style.top.%]="m.y"
+        [style.--mote-dx.px]="m.dx"
+        [style.animation-duration.s]="m.dur"
+        [style.animation-delay.s]="m.delay"></span>
+    </div>
+
     <div class="hero-content">
       <div class="hero-text">
         <h1 class="hero-title">AI/ML Computational Platform for dkNET</h1>
@@ -44,10 +288,6 @@
           GET STARTED TODAY
         </button>
       </div>
-      <img
-        class="hero-logo"
-        src="assets/landing/dknet.png"
-        alt="dkNET logo" />
     </div>
   </section>
 
