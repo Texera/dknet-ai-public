@@ -237,10 +237,7 @@
         nzStrokeLinecap="round">
       </nz-progress>
       <div class="creation-current-message">
-        <span class="phase-label">{{creationCurrentPhase}}</span>
-        <span
-          *ngIf="creationCurrentMessage"
-          class="phase-message"> — {{creationCurrentMessage}}</span>
+        <span class="phase-label">{{creationPhaseLabel(creationCurrentPhase)}}</span>
       </div>
       <nz-steps
         nzDirection="vertical"
@@ -248,26 +245,26 @@
         [nzCurrent]="creationPhases.indexOf(creationCurrentPhase)"
         [nzStatus]="creationFailed ? 'error' : 'process'">
         <nz-step
-          nzTitle="Submitted"
-          nzDescription="Manager accepted the request"></nz-step>
+          nzTitle="Requested"
+          nzDescription="Your request has been received"></nz-step>
         <nz-step
-          nzTitle="Scheduling"
-          nzDescription="Assigning a node (Karpenter may provision a new EC2)"></nz-step>
+          nzTitle="Allocating"
+          nzDescription="Reserving compute resources"></nz-step>
         <nz-step
-          nzTitle="Pulling"
-          nzDescription="Fetching the computing-unit image"></nz-step>
+          nzTitle="Preparing"
+          nzDescription="Preparing the environment"></nz-step>
         <nz-step
           nzTitle="Starting"
-          nzDescription="Container coming up"></nz-step>
+          nzDescription="Bringing your unit online"></nz-step>
         <nz-step
           nzTitle="Initializing"
-          nzDescription="JVM, actor system, JDBC warm-up"></nz-step>
+          nzDescription="Warming up the runtime"></nz-step>
         <nz-step
           nzTitle="Ready"
-          nzDescription="Pod is Ready"></nz-step>
+          nzDescription="Your computing unit is ready"></nz-step>
         <nz-step
           nzTitle="Connected"
-          nzDescription="Browser WebSocket attached"></nz-step>
+          nzDescription="Connected to your computing unit"></nz-step>
       </nz-steps>
     </div>
 
@@ -283,7 +280,8 @@
           <nz-option
             *ngFor="let type of availableComputingUnitTypes"
             [nzValue]="type"
-            [nzLabel]="type | titlecase">
+            [nzLabel]="computingUnitTypeLabel(type)"
+            [nzDisabled]="!isComputingUnitTypeSelectable(type)">
           </nz-option>
         </nz-select>
       </div>

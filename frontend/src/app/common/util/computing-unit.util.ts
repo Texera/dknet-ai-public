@@ -362,10 +362,10 @@ export const unitTypeMessageTemplate = {
     terminateTitle: "Terminate Computing Unit",
     terminateWarning:
       "<p style='color: #ff4d4f;'><strong>Warning:</strong> All execution results in this computing unit will be lost.</p>",
-    createSuccess: "Successfully created the Kubernetes computing unit",
-    createFailure: "Failed to create the Kubernetes computing unit",
-    terminateSuccess: "Terminated Kubernetes computing unit",
-    terminateFailure: "Failed to terminate Kubernetes computing unit",
+    createSuccess: "Successfully created the computing unit",
+    createFailure: "Failed to create the computing unit",
+    terminateSuccess: "Terminated the computing unit",
+    terminateFailure: "Failed to terminate the computing unit",
     terminateTooltip: "Terminate this computing unit",
   },
   aws: {
@@ -380,3 +380,41 @@ export const unitTypeMessageTemplate = {
     terminateTooltip: "Terminate this EC2 instance",
   },
 } as const;
+
+// User-facing label for the computing-unit type dropdown. Kept separate
+// from the underlying type identifier (e.g. "kubernetes") so we can rename
+// without touching backend payloads or comparisons elsewhere in the UI.
+const COMPUTING_UNIT_TYPE_LABELS: Record<string, string> = {
+  kubernetes: "Free",
+  local: "Local",
+  aws: "AWS",
+};
+
+export function computingUnitTypeLabel(type: string): string {
+  return COMPUTING_UNIT_TYPE_LABELS[type] ?? type;
+}
+
+export function isComputingUnitTypeSelectable(type: string): boolean {
+  // AWS path is hidden from end-users for now; entries still render so the
+  // option remains discoverable but cannot be picked.
+  return type !== "aws";
+}
+
+// Friendly label for each creation-status phase emitted by the manager
+// (Submitted / Scheduling / Pulling / Starting / Initializing / Ready /
+// Failed) plus the frontend-only "Connected" phase. Keeps infra-jargon
+// (pod, container, Karpenter, JVM, ...) out of the modal.
+const CREATION_PHASE_LABELS: Record<string, string> = {
+  Submitted: "Requested",
+  Scheduling: "Allocating",
+  Pulling: "Preparing",
+  Starting: "Starting",
+  Initializing: "Initializing",
+  Ready: "Ready",
+  Connected: "Connected",
+  Failed: "Failed",
+};
+
+export function creationPhaseLabel(phase: string): string {
+  return CREATION_PHASE_LABELS[phase] ?? phase;
+}

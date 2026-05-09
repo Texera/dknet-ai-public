@@ -57,6 +57,9 @@ import {
   getComputingUnitCpuLimitUnit,
   isComputingUnitShmTooLarge,
   getJvmMemorySliderConfig,
+  computingUnitTypeLabel,
+  isComputingUnitTypeSelectable,
+  creationPhaseLabel,
 } from "../../../common/util/computing-unit.util";
 import { PvePackageResponse, WorkflowPveService } from "../../service/virtual-environment/virtual-environment.service";
 import { NgClass, NgIf, NgFor, DecimalPipe, TitleCasePipe } from "@angular/common";
@@ -140,6 +143,9 @@ export class ComputingUnitSelectionComponent implements OnInit {
 
   // current workflow's Id, will change with wid in the workflowActionService.metadata
   protected readonly unitTypeMessageTemplate = unitTypeMessageTemplate;
+  protected readonly computingUnitTypeLabel = computingUnitTypeLabel;
+  protected readonly isComputingUnitTypeSelectable = isComputingUnitTypeSelectable;
+  protected readonly creationPhaseLabel = creationPhaseLabel;
   workflowId: number | undefined;
 
   lastSelectedCuid?: number;

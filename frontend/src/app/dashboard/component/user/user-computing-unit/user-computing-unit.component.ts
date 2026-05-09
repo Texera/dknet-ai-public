@@ -39,6 +39,9 @@ import {
   unitTypeMessageTemplate,
   isComputingUnitShmTooLarge,
   getJvmMemorySliderConfig,
+  computingUnitTypeLabel,
+  isComputingUnitTypeSelectable,
+  creationPhaseLabel,
 } from "../../../../common/util/computing-unit.util";
 import { ComputingUnitActionsService } from "../../../../common/service/computing-unit/computing-unit-actions/computing-unit-actions.service";
 import { NzCardComponent } from "ng-zorro-antd/card";
@@ -94,6 +97,11 @@ import { NzStepsComponent, NzStepComponent } from "ng-zorro-antd/steps";
   ],
 })
 export class UserComputingUnitComponent implements OnInit {
+  // Expose util helpers to the template.
+  protected readonly computingUnitTypeLabel = computingUnitTypeLabel;
+  protected readonly isComputingUnitTypeSelectable = isComputingUnitTypeSelectable;
+  protected readonly creationPhaseLabel = creationPhaseLabel;
+
   public entries: DashboardEntry[] = [];
   public isLogin = this.userService.isLogin();
   public currentUid = this.userService.getCurrentUser()?.uid;
