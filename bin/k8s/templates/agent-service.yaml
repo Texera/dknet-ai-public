@@ -54,6 +54,13 @@ spec:
               value: "http://{{ .Values.webserver.name }}-svc.{{ .Release.Namespace }}:{{ .Values.webserver.service.port }}"
             - name: WORKFLOW_COMPILING_SERVICE_ENDPOINT
               value: "http://workflow-compiling-service-svc.{{ .Release.Namespace }}:9090"
+            # Each CU runs as its own pod (computing-unit-{cuid}) on the
+            # headless service in the CU pool namespace. Agent-service
+            # substitutes {cuid} per-execution and forwards the user's JWT
+            # in Authorization, so each CU's auth filter validates as if
+            # the call came from the workflow page.
+            - name: EXECUTION_ENDPOINT_TEMPLATE
+              value: "http://computing-unit-{cuid}.{{ .Values.workflowComputingUnitPool.headlessServiceName | default "texera-workflow-computing-unit-svc" }}.{{ .Values.workflowComputingUnitPool.namespace }}:8085"
             - name: WORKFLOW_EXECUTION_SERVICE_ENDPOINT
               value: "http://localhost:8085"
             - name: TEXERA_SERVICE_LOG_LEVEL
