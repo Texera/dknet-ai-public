@@ -128,7 +128,9 @@ export class DashboardComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.isCollapsed = false;
+    // Collapse the sidebar on the landing/about page so the hero animation
+    // owns the frame; expand it everywhere else.
+    this.isCollapsed = this.router.url.includes("about");
 
     this.router.events.pipe(untilDestroyed(this)).subscribe(() => {
       this.checkRoute();
@@ -138,6 +140,7 @@ export class DashboardComponent implements OnInit {
       if (event instanceof NavigationEnd) {
         this.checkRoute();
         this.showLinks = event.url.includes("about");
+        this.isCollapsed = event.url.includes("about");
       }
     });
 
