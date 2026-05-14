@@ -27,6 +27,8 @@ import { DASHBOARD_USER_WORKFLOW } from "../../../app-routing.constant";
 import { NzRowDirective, NzColDirective } from "ng-zorro-antd/grid";
 import { NgIf, NgFor, AsyncPipe } from "@angular/common";
 import { LocalLoginComponent } from "./local-login/local-login.component";
+import { GoogleSigninButtonModule } from "@abacritt/angularx-social-login";
+import { UserIconComponent } from "../../../dashboard/component/user/user-icon/user-icon.component";
 
 interface Mote {
   x: number;       // % from left
@@ -41,7 +43,16 @@ interface Mote {
   selector: "texera-about",
   templateUrl: "./about.component.html",
   styleUrls: ["./about.component.scss"],
-  imports: [NzRowDirective, NzColDirective, NgIf, NgFor, LocalLoginComponent, AsyncPipe],
+  imports: [
+    NzRowDirective,
+    NzColDirective,
+    NgIf,
+    NgFor,
+    LocalLoginComponent,
+    AsyncPipe,
+    GoogleSigninButtonModule,
+    UserIconComponent,
+  ],
 })
 export class AboutComponent implements OnInit {
   @ViewChild("loginSection") loginSectionRef?: ElementRef<HTMLElement>;

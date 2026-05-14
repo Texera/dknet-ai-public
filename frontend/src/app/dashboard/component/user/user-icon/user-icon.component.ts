@@ -22,6 +22,7 @@ import { UserService } from "../../../../common/service/user/user.service";
 import { User } from "../../../../common/type/user";
 import { UntilDestroy } from "@ngneat/until-destroy";
 import { Router } from "@angular/router";
+import { SocialAuthService } from "@abacritt/angularx-social-login";
 import { DASHBOARD_ABOUT } from "../../../../app-routing.constant";
 import { UserAvatarComponent } from "../user-avatar/user-avatar.component";
 import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
@@ -52,7 +53,8 @@ export class UserIconComponent {
 
   constructor(
     private userService: UserService,
-    private router: Router
+    private router: Router,
+    private socialAuthService: SocialAuthService
   ) {
     this.user = this.userService.getCurrentUser();
   }
@@ -61,6 +63,11 @@ export class UserIconComponent {
    * handle the event when user click on the logout button
    */
   public onClickLogout(): void {
+    // Clear the Google social-auth state too. Otherwise SocialAuthService's
+    // ReplaySubject would re-emit the cached user the next time
+    // DashboardComponent mounts at "/" and re-issue a JWT, bouncing the
+    // user back into workflows instead of leaving them on the landing page.
+    this.socialAuthService.signOut(true).catch(() => {});
     this.userService.logout();
     document.cookie = "flarum_remember=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
     this.router.navigate([DASHBOARD_ABOUT]);

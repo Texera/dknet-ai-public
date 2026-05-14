@@ -62,4 +62,8 @@ spec:
               path: /api/healthcheck
               port: {{ .Values.configService.service.port }}
             initialDelaySeconds: 5
-            periodSeconds: 5 
+            periodSeconds: 5
+          {{- with .Values.configService.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

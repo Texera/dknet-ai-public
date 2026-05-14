@@ -264,22 +264,36 @@
         [style.animation-delay.s]="m.delay"></span>
     </div>
 
+    <!-- Floating auth control: replaces the dashboard navbar's button on
+         this page so the hero can claim the full viewport height. -->
+    <div class="hero-auth-corner">
+      <ng-container *ngIf="(isLogin$ | async); else signedOutTpl">
+        <texera-user-icon></texera-user-icon>
+      </ng-container>
+      <ng-template #signedOutTpl>
+        <asl-google-signin-button
+          *ngIf="config.env.googleLogin"
+          type="standard"
+          size="large"
+          [width]="200"></asl-google-signin-button>
+      </ng-template>
+    </div>
+
     <div class="hero-content">
       <div class="hero-text">
-        <h1 class="hero-title">AI/ML Computational Platform for dkNET</h1>
+        <h1 class="hero-title">An AI and Data Science Computational Platform for dkNET</h1>
         <p class="hero-body">
           <a
             href="https://dknet-ai.org"
             target="_blank"
             rel="noopener">dkNET-AI.org</a>
-          is an AI/ML computational platform designed to assist NIDDK researchers in developing hypotheses and utilizing
-          new AI/ML techniques. The platform empowers researchers to perform a diverse range of bioinformatics
-          analytical tasks easily. The platform is powered by
+          is a computational platform designed to assist NIDDK researchers in developing hypotheses and utilizing the
+          latest AI and data science techniques on the cloud. The platform empowers researchers to perform a diverse
+          range of bioinformatics analytical tasks easily. The platform is powered by
           <a
             href="https://texera.io"
             target="_blank"
-            rel="noopener">Texera</a>, which supports collaborative data science and AI/ML to bridge the gap between computational scientists
-          and biomedical bench researchers.
+            rel="noopener">Apache Texera (Incubating)</a>.
         </p>
       </div>
     </div>

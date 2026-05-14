@@ -32,7 +32,7 @@
 .hero {
   position: relative;
   width: 100%;
-  min-height: 100%;
+  min-height: 100vh;
   // Prefer WebP (≈200 KB) over the legacy PNG fallback. image-set lets the
   // browser pick whichever it can decode.
   background-image: image-set(
@@ -478,6 +478,24 @@
   max-width: 40%;
   height: auto;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45));
+}
+
+// Floating Google sign-in / user-icon control in the hero's top-right
+// corner. Replaces the dashboard navbar button on this page so the
+// background image can claim full viewport height. The Google button
+// renders its own white pill, so no wrapper background here.
+.hero-auth-corner {
+  position: absolute;
+  top: 22px;
+  right: 28px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  ::ng-deep asl-google-signin-button > div {
+    display: block !important;
+  }
 }
 
 .login-section {

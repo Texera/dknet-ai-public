@@ -332,6 +332,12 @@ litellm:
     litellm_settings:
       drop_params: true
     model_list: []
+  # Observed idle: ~860 MiB RSS (litellm preloads its model list + tokenizer
+  # data). 1Gi request gives ~15% headroom; no limit so it can grow under load.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 1Gi
 
 # Agent service (chatbot/copilot). When enabled, deploys the bun-based
 # agent-service that orchestrates LLM calls via LiteLLM. Disabled by default.
@@ -341,6 +347,12 @@ agentService:
   imageName: agent-service
   env:
     llmApiKey: "sk-litellm-master-key"
+  # Observed idle: ~60 MiB RSS. 128 MiB request leaves enough headroom for
+  # request-handling bursts; no limit so it can grow if needed.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml

@@ -202,6 +202,22 @@
         <span>About</span>
       </li>
     </ul>
+    <a
+      class="sider-attribution"
+      [class.sider-attribution--collapsed]="isCollapsed"
+      href="https://texera.io"
+      target="_blank"
+      rel="noopener"
+      nz-tooltip="Powered by Texera"
+      nzTooltipPlacement="right">
+      <img
+        src="assets/logos/full_logo_small.png"
+        alt="Texera logo"
+        class="sider-attribution-logo" />
+      <span
+        *ngIf="!isCollapsed"
+        class="sider-attribution-text">Powered by Texera</span>
+    </a>
     <span id="git-commit-id">Git hash: {{ gitCommitHash }}</span>
   </nz-sider>
 

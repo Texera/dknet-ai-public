@@ -130,7 +130,7 @@ export class DashboardComponent implements OnInit {
   ngOnInit(): void {
     // Collapse the sidebar on the landing/about page so the hero animation
     // owns the frame; expand it everywhere else.
-    this.isCollapsed = this.router.url.includes("about");
+    this.isCollapsed = this.isAboutPage(this.router.url);
 
     this.router.events.pipe(untilDestroyed(this)).subscribe(() => {
       this.checkRoute();
@@ -139,8 +139,8 @@ export class DashboardComponent implements OnInit {
     this.router.events.pipe(untilDestroyed(this)).subscribe(event => {
       if (event instanceof NavigationEnd) {
         this.checkRoute();
-        this.showLinks = event.url.includes("about");
-        this.isCollapsed = event.url.includes("about");
+        this.showLinks = this.isAboutPage(event.url);
+        this.isCollapsed = this.isAboutPage(event.url);
       }
     });
 
@@ -156,6 +156,11 @@ export class DashboardComponent implements OnInit {
       });
 
     this.socialAuthService.authState.pipe(untilDestroyed(this)).subscribe(user => {
+      // authState is a ReplaySubject and re-emits the cached user every time
+      // this component mounts. Skip when we already have a JWT (the user
+      // navigated here from elsewhere) or when signOut() emits null — only
+      // act on a fresh Google sign-in.
+      if (!user || this.userService.isLogin()) return;
       this.userService
         .googleLogin(user.idToken)
         .pipe(untilDestroyed(this))
@@ -238,7 +243,18 @@ export class DashboardComponent implements OnInit {
     if (currentRoute.match(/\/dashboard\/user\/workflow\/\d+/)) {
       return false;
     }
+    // About page owns the full-height hero; auth controls move into the
+    // hero corner so the page doesn't surrender 70px to the search bar.
+    if (this.isAboutPage(currentRoute)) {
+      return false;
+    }
     return true;
+  }
+
+  // The About / landing page now lives at "/" (with a legacy redirect from
+  // /dashboard/about), so detect both forms when toggling UI affordances.
+  private isAboutPage(url: string): boolean {
+    return url === "/" || url.startsWith("/?") || url.startsWith("/dashboard/about");
   }
 
   handleCollapseChange(collapsed: boolean) {

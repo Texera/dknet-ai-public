@@ -81,13 +81,11 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /app/config
+          # Requests only — no limits (see agent-service.yaml for rationale).
+          {{- with .Values.litellm.resources }}
           resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
       volumes:
         - name: config
           configMap:

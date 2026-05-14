@@ -68,7 +68,50 @@ button {
 .ant-menu {
   overflow-x: hidden;
   overflow-y: auto;
-  height: calc(100vh - 70px - 48px);
+  // Logo (70px) + sider trigger (48px) + sider attribution (44px).
+  height: calc(100vh - 70px - 48px - 44px);
+}
+
+.sider-attribution {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  color: rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  text-decoration: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fff;
+  transition: color 0.2s ease, background 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+
+  &:hover {
+    color: rgba(0, 0, 0, 0.85);
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  &--collapsed {
+    padding: 0;
+  }
+}
+
+.sider-attribution-logo {
+  height: 20px;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.sider-attribution-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .logo-section {

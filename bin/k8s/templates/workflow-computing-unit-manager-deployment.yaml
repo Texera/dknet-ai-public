@@ -106,3 +106,7 @@ spec:
             - name: {{ .name }}
               value: "{{ .value }}"
             {{- end }}
+          {{- with .Values.workflowComputingUnitManager.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

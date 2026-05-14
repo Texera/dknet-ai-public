@@ -65,13 +65,13 @@ spec:
               value: "http://localhost:8085"
             - name: TEXERA_SERVICE_LOG_LEVEL
               value: "INFO"
+          # Requests only — no limits. Cluster-wide policy: services may burst
+          # into whatever the node has free; misbehavior shows up in metrics
+          # rather than being silently throttled / OOMKilled at an arbitrary cap.
+          {{- with .Values.agentService.resources }}
           resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -67,3 +67,7 @@ spec:
             - name: {{ .name }}
               value: "{{ .value }}"
             {{- end }}
+          {{- with .Values.workflowCompilingService.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

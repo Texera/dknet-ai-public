@@ -64,3 +64,7 @@ spec:
             - name: {{ .name }}
               value: "{{ .value }}"
           {{- end }}
+          {{- with .Values.webserver.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

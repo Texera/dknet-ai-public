@@ -494,9 +494,7 @@ class ComputingUnitManagingResource {
         .asScala
         .filter(_.getTerminateTime == null) // Filter out terminated units
 
-      if (
-        units.size >= maxNumOfRunningComputingUnitsPerUser && cuType == WorkflowComputingUnitTypeEnum.kubernetes
-      ) {
+      if (units.size >= maxNumOfRunningComputingUnitsPerUser) {
         throw InsufficientComputingUnitQuota(maxNumOfRunningComputingUnitsPerUser)
       }
 

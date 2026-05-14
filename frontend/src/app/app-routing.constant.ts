@@ -19,7 +19,10 @@
 
 export const DASHBOARD = "/dashboard";
 export const DASHBOARD_HOME = `${DASHBOARD}/home`;
-export const DASHBOARD_ABOUT = `${DASHBOARD}/about`;
+// The About / landing page is served at the site root so the URL bar reads
+// just dknet-ai.org instead of dknet-ai.org/dashboard/about. The legacy
+// /dashboard/about path still resolves via a redirect in AppRoutingModule.
+export const DASHBOARD_ABOUT = "/";
 
 export const DASHBOARD_HUB = `${DASHBOARD}/hub`;
 export const DASHBOARD_HUB_WORKFLOW = `${DASHBOARD_HUB}/workflow`;
