@@ -87,6 +87,22 @@ CREATE TYPE user_role_enum AS ENUM ('INACTIVE', 'RESTRICTED', 'REGULAR', 'ADMIN'
 CREATE TYPE action_enum AS ENUM ('like', 'unlike', 'view', 'clone');
 CREATE TYPE privilege_enum AS ENUM ('NONE', 'READ', 'WRITE');
 CREATE TYPE workflow_computing_unit_type_enum AS ENUM ('local', 'kubernetes', 'aws');
+CREATE TYPE cluster_status AS ENUM (
+    'LAUNCH_RECEIVED',
+    'PENDING',
+    'RUNNING',
+    'TERMINATE_RECEIVED',
+    'SHUTTING_DOWN',
+    'TERMINATED',
+    'STOP_RECEIVED',
+    'STOPPING',
+    'STOPPED',
+    'START_RECEIVED',
+    'LAUNCH_FAILED',
+    'TERMINATE_FAILED',
+    'STOP_FAILED',
+    'START_FAILED'
+);
 
 -- ============================================
 -- 5. Create tables
@@ -434,6 +450,33 @@ CREATE TABLE IF NOT EXISTS computing_unit_user_access
     FOREIGN KEY (cuid) REFERENCES workflow_computing_unit(cuid) ON DELETE CASCADE,
     FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE CASCADE
 );
+
+-- CloudBioMapper: user-launched cluster (Slurm-on-EC2) state. owner_id is
+-- INT + CHECK rather than SERIAL because it FKs "user"(uid) which is itself
+-- SERIAL — the constraint just rejects negative values from buggy callers.
+CREATE TABLE IF NOT EXISTS cluster
+(
+    cid                 SERIAL PRIMARY KEY,
+    name                VARCHAR(255) NOT NULL,
+    owner_id            INTEGER NOT NULL CHECK (owner_id >= 0),
+    machine_type        VARCHAR(255) NOT NULL,
+    number_of_machines  INT NOT NULL,
+    creation_time       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status              cluster_status,
+    FOREIGN KEY (owner_id) REFERENCES "user"(uid) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cluster_activity
+(
+    id          SERIAL PRIMARY KEY,
+    cluster_id  INT NOT NULL,
+    start_time  TIMESTAMP NOT NULL,
+    end_time    TIMESTAMP NULL,
+    FOREIGN KEY (cluster_id) REFERENCES cluster(cid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cluster_activity_cid_start
+    ON cluster_activity (cluster_id, start_time);
 
 -- START Fulltext search index creation (DO NOT EDIT THIS LINE)
 CREATE EXTENSION IF NOT EXISTS pgroonga;
