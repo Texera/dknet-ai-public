@@ -7,6 +7,7 @@ import org.apache.texera.amber.core.workflow.{OutputPort, PortIdentity}
 import org.apache.texera.amber.operator.metadata.{OperatorGroupConstants, OperatorInfo}
 import org.apache.texera.amber.operator.source.PythonSourceOperatorDescriptor
 import org.apache.texera.amber.core.storage.{DocumentFactory, FileResolver}
+import org.apache.texera.amber.config.ApplicationConfig
 
 class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
   @JsonProperty(required = true)
@@ -27,8 +28,11 @@ class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
   @JsonPropertyDescription("Cluster")
   val cluster: String = ""
 
-  private var clusterLauncherServiceTarget: String =
-    "http://cloudmapper-service.texera.svc.cluster.local:4000"
+  // Resolved at codegen from `cluster-launcher-service.target`
+  // (env: CLUSTER_LAUNCHER_SERVICE_TARGET). Shared with ClusterServiceClient
+  // so REST + operator always point at the same Go service.
+  private val clusterLauncherServiceTarget: String =
+    ApplicationConfig.clusterLauncherServiceTarget.stripSuffix("/")
 
   // Getter to retrieve only the id part (cid) from the cluster
   def clusterId: String = {

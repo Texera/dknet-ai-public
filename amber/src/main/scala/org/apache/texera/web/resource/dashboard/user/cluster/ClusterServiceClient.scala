@@ -1,25 +1,22 @@
 package org.apache.texera.web.resource.dashboard.user.cluster
 
+import org.apache.texera.amber.config.ApplicationConfig
+
 import java.net.{HttpURLConnection, URL}
 import scala.io.Source
 import scala.util.{Failure, Success, Try}
 
 object ClusterServiceClient {
 
-  /**
-    * Makes an HTTP POST request to create a cluster in the Go microservice.
-    *
-    * @param clusterId        The id of the cluster.
-    * @param machineType      The type of the machine for the cluster.
-    * @param numberOfMachines The number of machines in the cluster.
-    * @return Either an error message in Left, or the response body in Right.
-    */
+  private def base: String =
+    ApplicationConfig.clusterLauncherServiceTarget.stripSuffix("/")
+
   def callCreateClusterAPI(
       clusterId: Int,
       machineType: String,
       numberOfMachines: Int
   ): Either[String, String] = {
-    val url = new URL(s"http://cloudmapper-service:4000/api/cluster/create")
+    val url = new URL(s"$base/api/cluster/create")
     val jsonInputString =
       s"""{
          |"provider": "aws",
@@ -31,47 +28,21 @@ object ClusterServiceClient {
     sendHttpRequest("POST", url, Some(jsonInputString))
   }
 
-  /**
-    * Makes an HTTP DELETE request to delete a cluster in the Go microservice.
-    *
-    * @param clusterId The ID of the cluster to be deleted.
-    * @return Either an error message in Left, or the response body in Right.
-    */
   def callDeleteClusterAPI(clusterId: Int): Either[String, String] = {
-    val url = new URL(s"http://cloudmapper-service:4000/api/cluster/$clusterId")
+    val url = new URL(s"$base/api/cluster/$clusterId")
     sendHttpRequest("DELETE", url, None)
   }
 
-  /**
-    * Makes an HTTP DELETE request to delete a cluster in the Go microservice.
-    *
-    * @param clusterId The ID of the cluster to be paused.
-    * @return Either an error message in Left, or the response body in Right.
-    */
   def callPauseClusterAPI(clusterId: Int): Either[String, String] = {
-    val url = new URL(s"http://cloudmapper-service:4000/api/cluster/$clusterId")
+    val url = new URL(s"$base/api/cluster/$clusterId")
     sendHttpRequest("PUT", url, None)
   }
 
-  /**
-    * Makes an HTTP DELETE request to delete a cluster in the Go microservice.
-    *
-    * @param clusterId The ID of the cluster to be resumed.
-    * @return Either an error message in Left, or the response body in Right.
-    */
   def callResumeClusterAPI(clusterId: Int): Either[String, String] = {
-    val url = new URL(s"http://cloudmapper-service:4000/api/cluster/resume/$clusterId")
+    val url = new URL(s"$base/api/cluster/resume/$clusterId")
     sendHttpRequest("POST", url, None)
   }
 
-  /**
-    * Helper function to send an HTTP request.
-    *
-    * @param method          The HTTP method (e.g., POST, DELETE).
-    * @param url             The URL for the HTTP request.
-    * @param jsonInputString The optional JSON payload for the request body (for POST requests).
-    * @return Either an error message in Left, or the response body in Right.
-    */
   private def sendHttpRequest(
       method: String,
       url: URL,

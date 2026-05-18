@@ -1,13 +1,13 @@
-
+{{- if .Values.cloudmapper.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: cloudmapper-pvc
-  namespace: texera
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
-  storageClassName: local-storage  
+      storage: {{ .Values.cloudmapper.persistenceSize | default "10Gi" }}
+  storageClassName: {{ .Values.cloudmapper.storageClass | default "local-path" }}
+{{- end }}

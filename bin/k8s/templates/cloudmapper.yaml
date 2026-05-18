@@ -1,10 +1,12 @@
+{{- if .Values.cloudmapper.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cloudmapper
-  namespace: texera
+  labels:
+    app: cloudmapper
 spec:
-  replicas: 1
+  replicas: {{ .Values.cloudmapper.replicas | default 1 }}
   selector:
     matchLabels:
       app: cloudmapper
@@ -21,8 +23,14 @@ spec:
           emptyDir: {}
         - name: ssh-key-volume
           secret:
-            secretName: ssh-key
-            defaultMode: 0600  # Secure SSH key permissions
+            secretName: {{ .Values.cloudmapper.sshKeySecret | default "cloudmapper-ssh-key" }}
+            defaultMode: 0600
+        - name: cloudmapper-config-volume
+          configMap:
+            name: {{ .Values.cloudmapper.configMap | default "cloudmapper-config" }}
+            items:
+              - key: config.yaml
+                path: config.yaml
 
       initContainers:
         - name: aws-config-setup
@@ -35,17 +43,17 @@ spec:
               echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> /aws-config/credentials;
               echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> /aws-config/credentials;
               echo "[default]" > /aws-config/config;
-              echo "region = us-west-2" >> /aws-config/config;
+              echo "region = {{ .Values.cloudmapper.awsRegion | default "us-west-1" }}" >> /aws-config/config;
           env:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: aws-secret
+                  name: {{ .Values.cloudmapper.awsSecret | default "cloudmapper-aws-credentials" }}
                   key: AWS_ACCESS_KEY_ID
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: aws-secret
+                  name: {{ .Values.cloudmapper.awsSecret | default "cloudmapper-aws-credentials" }}
                   key: AWS_SECRET_ACCESS_KEY
           volumeMounts:
             - name: aws-config-volume
@@ -53,9 +61,14 @@ spec:
 
       containers:
         - name: cloudmapper
-          image: kunwp1/cloudmapper:latest
+          image: "{{ .Values.cloudmapper.image | default "alirisheh876/cloudmapper:latest" }}"
+          imagePullPolicy: {{ .Values.cloudmapper.pullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: 4000
+          {{- with .Values.cloudmapper.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: cloudmapper-file-volume
               mountPath: "/data"
@@ -64,13 +77,17 @@ spec:
             - name: ssh-key-volume
               mountPath: /root/.ssh
               readOnly: true
+            - name: cloudmapper-config-volume
+              mountPath: /app/config/config.yaml
+              subPath: config.yaml
+      nodeSelector:
+        kubernetes.io/arch: amd64
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: cloudmapper-service
-  namespace: texera
 spec:
   selector:
     app: cloudmapper
@@ -79,4 +96,4 @@ spec:
       port: 4000
       targetPort: 4000
   type: ClusterIP
-
+{{- end }}
