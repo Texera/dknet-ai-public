@@ -25,8 +25,8 @@
         [nzPageIndex]="pageIndex"
         [nzFrontPagination]="true"
         [nzTotal]="(clusterList$ | async)?.length ?? 0"
-        (nzPageIndexChange)="onPageIndexChange($event)"
-        (nzPageSizeChange)="onPageSizeChange($event)"
+        (nzPageIndexChange)="onPageIndexChange($any($event))"
+        (nzPageSizeChange)="onPageSizeChange($any($event))"
         [nzShowSizeChanger]="true"
         [nzPageSizeOptions]="[10, 20, 50, 100]">
         <thead>
@@ -107,6 +107,6 @@
   <app-cluster-management-modal
     [isVisible]="isClusterManagementVisible"
     (closeModal)="closeClusterManagementModal()"
-    (submitClusterEvent)="submitCluster($event)">
+    (submitClusterEvent)="submitCluster($any($event))">
   </app-cluster-management-modal>
 </div>
