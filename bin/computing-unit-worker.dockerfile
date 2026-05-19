@@ -50,6 +50,14 @@ COPY LICENSE NOTICE DISCLAIMER ./
 COPY licenses/ licenses/
 COPY bin/licensing/ bin/licensing/
 
+# Build-time JDBC used only by jooq codegen in common/dao/build.sbt.
+ARG JOOQ_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/texera_db
+ARG JOOQ_JDBC_USERNAME=postgres
+ARG JOOQ_JDBC_PASSWORD=root_password
+ENV STORAGE_JDBC_URL=${JOOQ_JDBC_URL} \
+    STORAGE_JDBC_USERNAME=${JOOQ_JDBC_USERNAME} \
+    STORAGE_JDBC_PASSWORD=${JOOQ_JDBC_PASSWORD}
+
 RUN sbt clean WorkflowExecutionService/dist
 
 # Unzip the texera binary
