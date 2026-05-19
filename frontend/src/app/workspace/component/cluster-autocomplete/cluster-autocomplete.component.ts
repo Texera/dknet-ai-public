@@ -1,17 +1,21 @@
 import { Component } from "@angular/core";
-import { FieldType, FieldTypeConfig } from "@ngx-formly/core";
+import { CommonModule } from "@angular/common";
+import { ReactiveFormsModule } from "@angular/forms";
+import { FieldType, FieldTypeConfig, FormlyModule } from "@ngx-formly/core";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { NzModalService } from "ng-zorro-antd/modal";
+import { NzInputModule } from "ng-zorro-antd/input";
+import { NzIconModule } from "ng-zorro-antd/icon";
 import { ClusterSelectionComponent } from "../cluster-selection/cluster-selection.component";
 import { ClusterService } from "src/app/common/service/cluster/cluster.service";
 import { environment } from "src/environments/environment";
 
 @UntilDestroy()
 @Component({
-  standalone: false,
   selector: "texera-cluster-autocomplete-template",
   templateUrl: "./cluster-autocomplete.component.html",
   styleUrls: ["cluster-autocomplete.component.scss"],
+  imports: [CommonModule, ReactiveFormsModule, FormlyModule, NzInputModule, NzIconModule],
 })
 export class ClusterAutoCompleteComponent extends FieldType<FieldTypeConfig> {
   constructor(

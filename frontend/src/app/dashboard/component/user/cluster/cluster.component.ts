@@ -1,4 +1,5 @@
 import { Component, OnInit, OnDestroy } from "@angular/core";
+import { CommonModule } from "@angular/common";
 import { Clusters } from "../../../type/clusters";
 import { ClusterService } from "../../../../common/service/cluster/cluster.service";
 import { FormGroup } from "@angular/forms";
@@ -6,13 +7,27 @@ import { HttpErrorResponse } from "@angular/common/http";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { BehaviorSubject, Observable, timer } from "rxjs";
 import { switchMap, distinctUntilChanged, map } from "rxjs/operators";
+import { NzCardModule } from "ng-zorro-antd/card";
+import { NzTableModule } from "ng-zorro-antd/table";
+import { NzButtonModule } from "ng-zorro-antd/button";
+import { NzIconModule } from "ng-zorro-antd/icon";
+import { NzToolTipModule } from "ng-zorro-antd/tooltip";
+import { ClusterManagementModalComponent } from "./cluster-management-modal/cluster-management-modal.component";
 
 @UntilDestroy()
 @Component({
-  standalone: false,
   selector: "texera-cluster",
   templateUrl: "./cluster.component.html",
   styleUrls: ["./cluster.component.scss"],
+  imports: [
+    CommonModule,
+    NzCardModule,
+    NzTableModule,
+    NzButtonModule,
+    NzIconModule,
+    NzToolTipModule,
+    ClusterManagementModalComponent,
+  ],
 })
 export class ClusterComponent implements OnInit, OnDestroy {
   isClusterManagementVisible = false;

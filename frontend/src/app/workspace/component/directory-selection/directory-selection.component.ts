@@ -1,17 +1,28 @@
 import { Component, inject, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 import { NZ_MODAL_DATA, NzModalRef } from "ng-zorro-antd/modal";
+import { NzSelectModule } from "ng-zorro-antd/select";
+import { NzButtonModule } from "ng-zorro-antd/button";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { DatasetFileNode } from "../../../common/type/datasetVersionFileTree";
 import { DatasetVersion } from "../../../common/type/dataset";
 import { DashboardDataset } from "../../../dashboard/type/dashboard-dataset.interface";
 import { DatasetService } from "../../../dashboard/service/user/dataset/dataset.service";
+import { UserDatasetVersionFiletreeComponent } from "../../../dashboard/component/user/user-dataset/user-dataset-explorer/user-dataset-version-filetree/user-dataset-version-filetree.component";
 
 @UntilDestroy()
 @Component({
-  standalone: false,
   selector: "texera-directory-selection-modal",
   templateUrl: "directory-selection.component.html",
   styleUrls: ["directory-selection.component.scss"],
+  imports: [
+    CommonModule,
+    FormsModule,
+    NzSelectModule,
+    NzButtonModule,
+    UserDatasetVersionFiletreeComponent,
+  ],
 })
 export class DirectorySelectionComponent {
   readonly datasets: ReadonlyArray<DashboardDataset> = inject(NZ_MODAL_DATA).datasets;

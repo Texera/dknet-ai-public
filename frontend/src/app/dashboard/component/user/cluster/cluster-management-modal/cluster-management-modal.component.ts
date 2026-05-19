@@ -1,11 +1,26 @@
 import { Component, Input, Output, EventEmitter } from "@angular/core";
-import { FormBuilder, FormGroup, Validators } from "@angular/forms";
+import { CommonModule } from "@angular/common";
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from "@angular/forms";
+import { NzModalModule } from "ng-zorro-antd/modal";
+import { NzFormModule } from "ng-zorro-antd/form";
+import { NzInputModule } from "ng-zorro-antd/input";
+import { NzSelectModule } from "ng-zorro-antd/select";
+import { NzIconModule } from "ng-zorro-antd/icon";
 
 @Component({
-  standalone: false,
   selector: "app-cluster-management-modal",
   templateUrl: "./cluster-management-modal.component.html",
   styleUrls: ["./cluster-management-modal.component.scss"],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    NzModalModule,
+    NzFormModule,
+    NzInputModule,
+    NzSelectModule,
+    NzIconModule,
+  ],
 })
 export class ClusterManagementModalComponent {
   @Input() isVisible: boolean = false;
