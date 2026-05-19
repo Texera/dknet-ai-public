@@ -11,7 +11,7 @@ import { NzCardModule } from "ng-zorro-antd/card";
 import { NzTableModule } from "ng-zorro-antd/table";
 import { NzButtonModule } from "ng-zorro-antd/button";
 import { NzIconModule } from "ng-zorro-antd/icon";
-import { NzToolTipModule } from "ng-zorro-antd/tooltip";
+import { NzTooltipModule } from "ng-zorro-antd/tooltip";
 import { ClusterManagementModalComponent } from "./cluster-management-modal/cluster-management-modal.component";
 
 @UntilDestroy()
@@ -25,7 +25,7 @@ import { ClusterManagementModalComponent } from "./cluster-management-modal/clus
     NzTableModule,
     NzButtonModule,
     NzIconModule,
-    NzToolTipModule,
+    NzTooltipModule,
     ClusterManagementModalComponent,
   ],
 })

@@ -6,7 +6,7 @@ import { NZ_MODAL_DATA, NzModalRef } from "ng-zorro-antd/modal";
 import { NzSelectModule } from "ng-zorro-antd/select";
 import { NzEmptyModule } from "ng-zorro-antd/empty";
 import { NzButtonModule } from "ng-zorro-antd/button";
-import { NzToolTipModule } from "ng-zorro-antd/tooltip";
+import { NzTooltipModule } from "ng-zorro-antd/tooltip";
 import { Clusters } from "src/app/dashboard/type/clusters";
 
 @UntilDestroy()
@@ -14,7 +14,7 @@ import { Clusters } from "src/app/dashboard/type/clusters";
   selector: "texera-cluster-selection",
   templateUrl: "cluster-selection.component.html",
   styleUrls: ["cluster-selection.component.scss"],
-  imports: [CommonModule, FormsModule, NzSelectModule, NzEmptyModule, NzButtonModule, NzToolTipModule],
+  imports: [CommonModule, FormsModule, NzSelectModule, NzEmptyModule, NzButtonModule, NzTooltipModule],
 })
 export class ClusterSelectionComponent implements OnInit {
   readonly clusters: ReadonlyArray<Clusters> = inject(NZ_MODAL_DATA).clusters;
