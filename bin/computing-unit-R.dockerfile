@@ -35,7 +35,17 @@ RUN apt-get update && apt-get install -y \
 
 # Add .git for runtime calls to jgit from OPversion
 COPY .git .git
-COPY LICENSE NOTICE DISCLAIMER-WIP ./
+COPY LICENSE NOTICE DISCLAIMER ./
+# Required by WorkflowOperator's managedResources task during sbt compile.
+COPY licenses/ licenses/
+
+# Build-time JDBC used only by jooq codegen in common/dao/build.sbt.
+ARG JOOQ_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/texera_db
+ARG JOOQ_JDBC_USERNAME=postgres
+ARG JOOQ_JDBC_PASSWORD=root_password
+ENV STORAGE_JDBC_URL=${JOOQ_JDBC_URL} \
+    STORAGE_JDBC_USERNAME=${JOOQ_JDBC_USERNAME} \
+    STORAGE_JDBC_PASSWORD=${JOOQ_JDBC_PASSWORD}
 
 RUN sbt clean WorkflowExecutionService/dist
 
@@ -191,14 +201,15 @@ COPY --from=build /texera/amber/src/main/resources /texera/amber/src/main/resour
 # Copy code for python UDF
 COPY --from=build /texera/amber/src/main/python /texera/amber/src/main/python
 # Copy ASF licensing files
-COPY --from=build /texera/LICENSE /texera/NOTICE /texera/DISCLAIMER-WIP /texera/
+COPY --from=build /texera/LICENSE /texera/NOTICE /texera/DISCLAIMER /texera/
 
 # Remove application.ini if it exists — the SBT launcher doesn't recognize
 # --add-opens as a JVM flag and passes it as an app arg, causing a crash.
 # The --add-opens flags are instead passed via JAVA_OPTS env var.
 RUN rm -f conf/application.ini
 
-CMD ["bin/computing-unit-master"]
+# Run ttyd web shell on 7681 alongside the cu-master process so an in-pod
+# REPL is reachable for R-UDF debugging without kubectl exec.
 CMD ["/bin/bash","-lc", "\
   ttyd -p 7681 -t disableLeaveAlert=true /bin/bash & \
   exec bin/computing-unit-master"]

@@ -1,0 +1,7 @@
+# Per-dockerfile ignore for the frontend-only overlay build.
+# Only frontend/dist is needed as build context; everything else is
+# excluded so the parent .dockerignore's `**/dist/` blanket doesn't
+# strip out our payload.
+*
+!frontend/dist
+!frontend/dist/**

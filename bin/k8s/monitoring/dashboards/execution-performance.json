@@ -1,0 +1,147 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Currently running",
+      "type": "stat",
+      "id": 1,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_executions WHERE status = 1"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Started last 24h",
+      "type": "stat",
+      "id": 2,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_executions WHERE starting_time > NOW() - INTERVAL '24 hours'"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Failed last 24h",
+      "type": "stat",
+      "id": 3,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_executions WHERE status = 4 AND starting_time > NOW() - INTERVAL '24 hours'"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Avg duration last 24h",
+      "type": "stat",
+      "id": 4,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (last_update_time - starting_time))), 0) AS value FROM texera_db.workflow_executions WHERE last_update_time IS NOT NULL AND starting_time > NOW() - INTERVAL '24 hours' AND status IN (3,4,5)"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "orange"}]}, "unit": "s", "decimals": 2}}
+    },
+    {
+      "title": "p95 duration last 24h",
+      "type": "stat",
+      "id": 5,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (last_update_time - starting_time))), 0) AS value FROM texera_db.workflow_executions WHERE last_update_time IS NOT NULL AND starting_time > NOW() - INTERVAL '24 hours' AND status IN (3,4,5)"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}]}, "unit": "s", "decimals": 2}}
+    },
+    {
+      "title": "Max duration last 24h",
+      "type": "stat",
+      "id": 6,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (last_update_time - starting_time))), 0) AS value FROM texera_db.workflow_executions WHERE last_update_time IS NOT NULL AND starting_time > NOW() - INTERVAL '24 hours' AND status IN (3,4,5)"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "purple"}]}, "unit": "s", "decimals": 2}}
+    },
+
+    {
+      "title": "Execution duration distribution (last 24h)",
+      "type": "histogram",
+      "id": 10,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT EXTRACT(EPOCH FROM (last_update_time - starting_time)) AS duration_seconds FROM texera_db.workflow_executions WHERE last_update_time IS NOT NULL AND starting_time > NOW() - INTERVAL '24 hours' AND status IN (3,4,5)"}],
+      "options": {"bucketSize": 2, "bucketOffset": 0, "combine": false, "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}}
+    },
+
+    {
+      "title": "Status breakdown (selected time range)",
+      "type": "piechart",
+      "id": 11,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 4},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT CASE status WHEN 0 THEN 'ready' WHEN 1 THEN 'running' WHEN 2 THEN 'paused' WHEN 3 THEN 'completed' WHEN 4 THEN 'failed' WHEN 5 THEN 'killed' ELSE 'other' END AS metric, count(*) AS value FROM texera_db.workflow_executions WHERE $__timeFilter(starting_time) GROUP BY status ORDER BY status"}],
+      "options": {"legend": {"showLegend": true, "placement": "right", "displayMode": "list"}, "pieType": "donut", "reduceOptions": {"values": true, "calcs": ["lastNotNull"], "fields": ""}, "displayLabels": ["name", "percent"]}
+    },
+
+    {
+      "title": "Execution duration over time (avg per hour)",
+      "type": "timeseries",
+      "id": 12,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 13},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true,
+        "rawSql": "SELECT date_trunc('hour', starting_time) AS time, AVG(EXTRACT(EPOCH FROM (last_update_time - starting_time))) AS \"avg_seconds\", percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (last_update_time - starting_time))) AS \"p95_seconds\" FROM texera_db.workflow_executions WHERE $__timeFilter(starting_time) AND last_update_time IS NOT NULL AND status IN (3,4,5) GROUP BY 1 ORDER BY 1"}],
+      "options": {"tooltip": {"mode": "multi", "sort": "none"}, "legend": {"showLegend": true, "displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "pointSize": 5, "showPoints": "always"}}}
+    },
+
+    {
+      "title": "All executions in selected time range",
+      "type": "table",
+      "id": 13,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 11, "w": 24, "x": 0, "y": 22},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true,
+        "rawSql": "SELECT we.eid, w.name AS workflow, u.email AS user_email, CASE we.status WHEN 0 THEN 'ready' WHEN 1 THEN 'running' WHEN 2 THEN 'paused' WHEN 3 THEN 'completed' WHEN 4 THEN 'failed' WHEN 5 THEN 'killed' ELSE 'other' END AS status, we.starting_time AS started, we.last_update_time AS ended, ROUND(EXTRACT(EPOCH FROM (we.last_update_time - we.starting_time))::numeric, 2) AS duration_s, COALESCE(we.runtime_stats_size, 0) AS stats_bytes, we.cuid FROM texera_db.workflow_executions we JOIN texera_db.workflow_version wv ON wv.vid = we.vid JOIN texera_db.workflow w ON w.wid = wv.wid JOIN texera_db.\"user\" u ON u.uid = we.uid WHERE $__timeFilter(we.starting_time) ORDER BY we.starting_time DESC LIMIT 100"}],
+      "options": {"showHeader": true, "cellHeight": "sm"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "displayMode": "auto", "filterable": true}}, "overrides": [{"matcher": {"id": "byName", "options": "duration_s"}, "properties": [{"id": "unit", "value": "s"}]}, {"matcher": {"id": "byName", "options": "stats_bytes"}, "properties": [{"id": "unit", "value": "bytes"}]}]}
+    },
+
+    {
+      "title": "Runtime-stats payload over time (bytes)",
+      "type": "timeseries",
+      "id": 14,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 33},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true,
+        "rawSql": "SELECT date_trunc('hour', starting_time) AS time, COALESCE(SUM(runtime_stats_size), 0) AS \"bytes\" FROM texera_db.workflow_executions WHERE $__timeFilter(starting_time) GROUP BY 1 ORDER BY 1"}],
+      "options": {"tooltip": {"mode": "single", "sort": "none"}, "legend": {"showLegend": true, "displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "bars", "fillOpacity": 70, "pointSize": 5}}}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["texera", "executions"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Texera — Execution Performance",
+  "uid": "texera-execution-perf",
+  "version": 2,
+  "weekStart": ""
+}

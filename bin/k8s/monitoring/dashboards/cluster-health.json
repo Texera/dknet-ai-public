@@ -1,0 +1,169 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Texera pods running",
+      "type": "stat",
+      "id": 1,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "sum(kube_pod_status_phase{namespace=~\"default|texera-workflow-computing-unit-pool|monitoring\", phase=\"Running\"})"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Computing-unit pods",
+      "type": "stat",
+      "id": 2,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "sum(kube_pod_status_phase{namespace=\"texera-workflow-computing-unit-pool\", phase=\"Running\"})"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Container restarts (1h)",
+      "type": "stat",
+      "id": 3,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"default|texera-workflow-computing-unit-pool\"}[1h]))"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}, "unit": "short"}}
+    },
+    {
+      "title": "Cluster CPU (cores in use)",
+      "type": "stat",
+      "id": 4,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"default|texera-workflow-computing-unit-pool\", container!=\"\"}[5m]))"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue"}]}, "unit": "short", "decimals": 2}}
+    },
+    {
+      "title": "Cluster memory in use",
+      "type": "stat",
+      "id": 5,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "sum(container_memory_working_set_bytes{namespace=~\"default|texera-workflow-computing-unit-pool\", container!=\"\"})"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "purple"}]}, "unit": "bytes"}}
+    },
+    {
+      "title": "texera_db size",
+      "type": "stat",
+      "id": 6,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "targets": [{"refId": "A",
+        "expr": "pg_database_size_bytes{datname=\"texera_db\"}"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "yellow"}]}, "unit": "bytes"}}
+    },
+
+    {
+      "title": "CPU per pod (default namespace)",
+      "description": "Currently-Running pods only. The `and on(pod, namespace) (kube_pod_status_phase{phase=\"Running\"} == 1)` filter drops pods that have been terminated (helm rollout, Karpenter eviction, etc.) so the legend doesn't fill with ghost replicas.",
+      "type": "timeseries",
+      "id": 10,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 4},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{pod}}",
+        "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"default\", container!=\"\"}[2m]) and on(pod, namespace) (kube_pod_status_phase{phase=\"Running\"} == 1))"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}}}}
+    },
+    {
+      "title": "Memory per pod (default namespace)",
+      "description": "Currently-Running pods only (see CPU panel for filter rationale).",
+      "type": "timeseries",
+      "id": 11,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 4},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{pod}}",
+        "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"default\", container!=\"\"} and on(pod, namespace) (kube_pod_status_phase{phase=\"Running\"} == 1))"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}}}}
+    },
+
+    {
+      "title": "CPU per computing-unit pod",
+      "description": "Currently-Running CU pods only.",
+      "type": "timeseries",
+      "id": 12,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 13},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{pod}}",
+        "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"texera-workflow-computing-unit-pool\", container!=\"\"}[2m]) and on(pod, namespace) (kube_pod_status_phase{phase=\"Running\"} == 1))"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10}}}
+    },
+    {
+      "title": "Memory per computing-unit pod",
+      "description": "Currently-Running CU pods only.",
+      "type": "timeseries",
+      "id": 13,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 13},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{pod}}",
+        "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"texera-workflow-computing-unit-pool\", container!=\"\"} and on(pod, namespace) (kube_pod_status_phase{phase=\"Running\"} == 1))"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10}}}
+    },
+
+    {
+      "title": "Postgres connections by state",
+      "type": "timeseries",
+      "id": 14,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{datname}} {{state}}",
+        "expr": "sum by (datname, state) (pg_stat_activity_count{datname=~\"texera_db|texera_lakefs|texera_iceberg_catalog\"})"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 20, "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "title": "Postgres database sizes",
+      "type": "timeseries",
+      "id": 15,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+      "targets": [{"refId": "A",
+        "legendFormat": "{{datname}}",
+        "expr": "pg_database_size_bytes{datname!~\"template.*|postgres\"}"}],
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}}
+    },
+
+    {
+      "title": "Pod restarts in the last 24h (Texera)",
+      "type": "table",
+      "id": 16,
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 30},
+      "targets": [{"refId": "A", "instant": true, "format": "table",
+        "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"default|texera-workflow-computing-unit-pool\"}[24h])) > 0"}],
+      "transformations": [
+        {"id": "organize", "options": {"excludeByName": {"Time": true}}}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["texera", "cluster"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Texera — Cluster & Pod Health",
+  "uid": "texera-cluster-health",
+  "version": 1,
+  "weekStart": ""
+}

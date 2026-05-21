@@ -1,0 +1,132 @@
+# kube-prometheus-stack values for the Texera monitoring release.
+# Installs Prometheus + Grafana + node-exporter + kube-state-metrics +
+# operator. Alertmanager is disabled (the user only asked for visibility).
+#
+# Usage:
+#   helm upgrade --install kps prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --version 84.5.0 \
+#     -f bin/k8s/monitoring/values-kube-prometheus-stack.yaml
+
+fullnameOverride: kps
+
+# -- Disable Alertmanager: the user wants dashboards, not paging.
+alertmanager:
+  enabled: false
+
+# -- Disable the default kube-controller-manager / scheduler / etcd
+#    ServiceMonitors. EKS doesn't expose these metrics endpoints from
+#    user-accessible nodes, so the targets would be permanently down
+#    and clutter the UI.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # Pick up ServiceMonitors from any namespace, not only ones with the
+    # release helm label. postgres-exporter ships its own SM and we want
+    # it in.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+grafana:
+  enabled: true
+
+  # Auth: the user wants to log in as themselves. The admin secret is
+  # created out-of-band (see monitoring/manifests/grafana-admin-secret.sh).
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  # Mount under /grafana on the existing Envoy gateway hosting
+  # https://dknet-ai.org. Sub-path serving lets Grafana emit correct
+  # absolute URLs in its frontend bundle.
+  grafana.ini:
+    server:
+      root_url: "https://dknet-ai.org/grafana"
+      serve_from_sub_path: true
+    auth.anonymous:
+      enabled: false
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Sidecar discovers ConfigMaps with the labels below and provisions
+  # them as datasources / dashboards live, no Grafana restart needed.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+      searchNamespace: ALL
+
+  # Inject the Texera Postgres password as an env var so the provisioned
+  # Postgres datasource can reference it via $POSTGRES_PASSWORD without
+  # the password ever appearing in a ConfigMap.
+  envFromSecret: ""
+  env: {}
+  extraSecretMounts: []
+  envValueFrom:
+    POSTGRES_PASSWORD:
+      secretKeyRef:
+        name: texera-postgresql
+        key: postgres-password
+
+  # Disable bundled persistence dashboards we don't need; sidecar will
+  # handle our custom dashboards.
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: browser
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# kube-state-metrics: app-level Kubernetes object counts (deployments,
+# pods, restarts, etc.) — the basis for our cluster-health dashboard.
+kube-state-metrics:
+  enabled: true
+
+prometheus-node-exporter:
+  enabled: true

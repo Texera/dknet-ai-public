@@ -22,7 +22,7 @@ import { HttpClient, HttpErrorResponse, HttpParams } from "@angular/common/http"
 import { catchError, map, mergeMap, switchMap, tap, toArray } from "rxjs/operators";
 import { Dataset, DatasetVersion } from "../../../../common/type/dataset";
 import { AppSettings } from "../../../../common/app-setting";
-import { EMPTY, from, Observable, throwError } from "rxjs";
+import { EMPTY, from, Observable, of, throwError } from "rxjs";
 import { DashboardDataset } from "../../../type/dashboard-dataset.interface";
 import { DatasetFileNode } from "../../../../common/type/datasetVersionFileTree";
 import { DatasetStagedObject } from "../../../../common/type/dataset-staged-object";
@@ -354,7 +354,7 @@ export class DatasetService {
                 });
               }, concurrencyLimit),
               toArray(), // wait for all parts
-              // 3. FINISH: notify backend that all parts are done
+              // Retry finish once and treat 404 as success — server-side completion can race ahead of a lost response and we don't want to alarm the user with "Upload failed" when the file is already in lakeFS.
               switchMap(() => {
                 const finishParams = new HttpParams()
                   .set("type", "finish")
@@ -362,10 +362,28 @@ export class DatasetService {
                   .set("datasetName", datasetName)
                   .set("filePath", encodeURIComponent(filePath));
 
-                return this.http.post(
+                const finish$ = this.http.post(
                   `${AppSettings.getApiEndpoint()}/${DATASET_BASE_URL}/multipart-upload`,
                   {},
                   { params: finishParams }
+                );
+
+                return finish$.pipe(
+                  catchError((firstErr: unknown) => {
+                    const firstHttpErr = firstErr as HttpErrorResponse;
+                    if (firstHttpErr?.status === 409) {
+                      return throwError(() => firstErr);
+                    }
+                    return finish$.pipe(
+                      catchError((retryErr: unknown) => {
+                        const retryHttpErr = retryErr as HttpErrorResponse;
+                        if (retryHttpErr?.status === 404) {
+                          return of({});
+                        }
+                        return throwError(() => firstErr);
+                      })
+                    );
+                  })
                 );
               }),
               tap(() => {

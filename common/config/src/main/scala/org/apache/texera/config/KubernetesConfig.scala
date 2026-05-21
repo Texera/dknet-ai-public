@@ -38,6 +38,8 @@ object KubernetesConfig {
   val maxNumOfRunningComputingUnitsPerUser: Int =
     conf.getInt("kubernetes.max-num-of-running-computing-units-per-user")
 
+  val warmPoolCapacity: Int = conf.getInt("kubernetes.warm-pool-capacity")
+
   val cpuLimitOptions: List[String] =
     conf
       .getString("kubernetes.computing-unit-cpu-limit-options")

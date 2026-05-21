@@ -168,7 +168,8 @@ object ComputingUnitManagingResource {
   case class ComputingUnitLimitOptionsResponse(
       cpuLimitOptions: List[String],
       memoryLimitOptions: List[String],
-      gpuLimitOptions: List[String]
+      gpuLimitOptions: List[String],
+      warmPoolCapacity: Int
   )
 
   case class ComputingUnitTypesResponse(
@@ -364,7 +365,12 @@ class ComputingUnitManagingResource {
   def getComputingUnitLimitOptions(
       @Auth @unused user: SessionUser
   ): ComputingUnitLimitOptionsResponse = {
-    ComputingUnitLimitOptionsResponse(cpuLimitOptions, memoryLimitOptions, gpuLimitOptions)
+    ComputingUnitLimitOptionsResponse(
+      cpuLimitOptions,
+      memoryLimitOptions,
+      gpuLimitOptions,
+      KubernetesConfig.warmPoolCapacity
+    )
   }
 
   @GET

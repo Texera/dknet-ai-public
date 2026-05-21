@@ -1,0 +1,32 @@
+# Provisions a Postgres datasource pointing at texera-postgresql so
+# Grafana panels can run raw SQL against the Texera schema. The label
+# `grafana_datasource: "1"` is what the kube-prometheus-stack Grafana
+# sidecar watches for to auto-load.
+#
+# The password is referenced as $POSTGRES_PASSWORD which the Grafana
+# pod gets injected via envValueFrom (see values-kube-prometheus-stack.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-postgres
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  postgres.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Texera-Postgres
+        uid: texera-pg
+        type: grafana-postgresql-datasource
+        access: proxy
+        url: texera-postgresql.default.svc.cluster.local:5432
+        user: postgres
+        database: texera_db
+        secureJsonData:
+          password: "$POSTGRES_PASSWORD"
+        jsonData:
+          sslmode: disable
+          postgresVersion: 1500
+          timescaledb: false
+        editable: false

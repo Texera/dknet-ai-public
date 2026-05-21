@@ -1,0 +1,17 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": [
+        "https://dknet-ai.org",
+        "http://dknet-ai.org",
+        "http://k8s-default-envoydef-0d90547ffe-468e4408a4178e07.elb.us-west-1.amazonaws.com",
+        "https://k8s-default-envoydef-0d90547ffe-468e4408a4178e07.elb.us-west-1.amazonaws.com",
+        "http://localhost:4200"
+      ],
+      "AllowedMethods": ["GET", "PUT", "POST", "HEAD", "DELETE"],
+      "AllowedHeaders": ["*"],
+      "ExposeHeaders": ["ETag", "x-amz-request-id", "x-amz-id-2"],
+      "MaxAgeSeconds": 3000
+    }
+  ]
+}

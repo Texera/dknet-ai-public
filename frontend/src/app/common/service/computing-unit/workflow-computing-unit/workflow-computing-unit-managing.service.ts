@@ -199,11 +199,13 @@ export class WorkflowComputingUnitManagingService {
     cpuLimitOptions: string[];
     memoryLimitOptions: string[];
     gpuLimitOptions: string[];
+    warmPoolCapacity: number;
   }> {
     return this.http.get<{
       cpuLimitOptions: string[];
       memoryLimitOptions: string[];
       gpuLimitOptions: string[];
+      warmPoolCapacity: number;
     }>(`${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_BASE_URL}/limits`);
   }
 

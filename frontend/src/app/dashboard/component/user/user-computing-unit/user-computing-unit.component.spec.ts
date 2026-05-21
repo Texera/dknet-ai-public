@@ -46,7 +46,7 @@ describe("UserComputingUnitComponent", () => {
     } as any;
     mockComputingUnitService.getComputingUnitTypes.mockReturnValue(of({ typeOptions: [] }));
     mockComputingUnitService.getComputingUnitLimitOptions.mockReturnValue(
-      of({ cpuLimitOptions: [], memoryLimitOptions: [], gpuLimitOptions: [] })
+      of({ cpuLimitOptions: [], memoryLimitOptions: [], gpuLimitOptions: [], warmPoolCapacity: 0 })
     );
 
     await TestBed.configureTestingModule({

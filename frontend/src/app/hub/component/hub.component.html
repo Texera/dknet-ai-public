@@ -19,18 +19,6 @@
 
 <ul>
   <li
-    *ngIf="sidebarTabs.home_enabled"
-    nz-menu-item
-    nz-tooltip="Home Page"
-    nzMatchRouter="true"
-    nzTooltipPlacement="right"
-    [routerLink]="DASHBOARD_HOME">
-    <span
-      nz-icon
-      nzType="home"></span>
-    <span> Home </span>
-  </li>
-  <li
     *ngIf="sidebarTabs.workflow_enabled"
     nz-menu-item
     nz-tooltip="Search public workflows"

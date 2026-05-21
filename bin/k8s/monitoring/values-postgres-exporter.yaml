@@ -1,0 +1,38 @@
+# prometheus-postgres-exporter values: scrapes texera-postgresql in the
+# `default` namespace and exposes standard pg_* metrics (connections,
+# database size, deadlocks, replication lag, etc.).
+#
+# Note: Texera-specific business counts (users, workflows, executions)
+# are read directly via the Postgres datasource in Grafana (raw SQL in
+# dashboard panels), not through this exporter. Keeping this exporter
+# focused on engine-level Postgres health avoids the custom-queries
+# wiring the chart no longer makes ergonomic in v8.
+
+fullnameOverride: pg-exporter
+
+config:
+  datasource:
+    host: texera-postgresql.default.svc.cluster.local
+    user: postgres
+    passwordSecret:
+      name: texera-postgresql
+      key: postgres-password
+    port: "5432"
+    database: texera_db
+    sslmode: disable
+
+serviceMonitor:
+  enabled: true
+  # The kube-prometheus-stack release is "kps"; SMs are picked up
+  # cluster-wide because of the Selector* overrides in its values.
+  labels:
+    release: kps
+  interval: 30s
+  scrapeTimeout: 25s
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

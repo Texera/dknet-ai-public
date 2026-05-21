@@ -1,0 +1,46 @@
+# Routes https://dknet-ai.org/grafana(/...) on the existing Envoy
+# Gateway over to the Grafana service in the `monitoring` namespace.
+#
+# The Gateway lives in `default`, the backend in `monitoring`, so a
+# ReferenceGrant on the monitoring side authorizes the cross-ns
+# backendRef. Grafana itself is configured with serve_from_sub_path,
+# so the /grafana prefix is preserved (no rewrite filter needed).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-route
+  namespace: default
+spec:
+  hostnames:
+    - dknet-ai.org
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: texera-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /grafana
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: kps-grafana
+          namespace: monitoring
+          port: 80
+          weight: 1
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-default-httproute-to-grafana
+  namespace: monitoring
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: default
+  to:
+    - group: ""
+      kind: Service
+      name: kps-grafana
