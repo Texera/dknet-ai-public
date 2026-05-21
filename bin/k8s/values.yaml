@@ -319,6 +319,27 @@ computingUnitWarmPool:
     cpu: "1"
     memory: "2Gi"
 
+# CloudBioMapper Go service (Texera/cloudmapper). When enabled, deploys
+# the Go REST service that provisions EC2 clusters for sequence alignment
+# jobs. Disabled by default — it requires AWS credentials, a custom AMI,
+# and a writable S3 staging bucket; see project README for setup.
+cloudmapper:
+  enabled: false
+  replicas: 1
+  image: alirisheh876/cloudmapper:latest
+  pullPolicy: IfNotPresent
+  awsRegion: us-west-1
+  # Names of cluster-scoped pre-existing resources (created by deploy guide).
+  awsSecret: cloudmapper-aws-credentials  # Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+  sshKeySecret: cloudmapper-ssh-key       # Secret with id_rsa + id_rsa.pub
+  configMap: cloudmapper-config            # ConfigMap with key 'config.yaml'
+  storageClass: local-path
+  persistenceSize: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
 # LiteLLM proxy. When enabled, deploys a litellm container that fronts
 # upstream LLM providers (Anthropic, OpenAI, ...) and exposes an OpenAI-
 # compatible API for the agent service. Disabled by default.

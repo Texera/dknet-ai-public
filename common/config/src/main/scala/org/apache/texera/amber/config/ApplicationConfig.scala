@@ -113,4 +113,9 @@ object ApplicationConfig {
     if (getConfSource.hasPath("ai-assistant-server"))
       Some(getConfSource.getConfig("ai-assistant-server"))
     else None
+
+  // CloudBioMapper Go service target. Defaults to in-cluster service DNS
+  // when running inside k8s; overridable via CLUSTER_LAUNCHER_SERVICE_TARGET.
+  val clusterLauncherServiceTarget: String =
+    getConfSource.getString("cluster-launcher-service.target")
 }

@@ -68,6 +68,16 @@ COPY bin/licensing/ bin/licensing/
 # LICENSE merge below can union it with amber/LICENSE-binary-java.
 COPY --from=build-frontend /frontend/LICENSE-binary amber/LICENSE-binary-frontend
 
+# Build-time JDBC used only by jooq codegen in common/dao/build.sbt.
+# Override with --build-arg so it can reach a postgres reachable from the
+# builder (on Linux pass --add-host=host.docker.internal:host-gateway).
+ARG JOOQ_JDBC_URL=jdbc:postgresql://host.docker.internal:5432/texera_db
+ARG JOOQ_JDBC_USERNAME=postgres
+ARG JOOQ_JDBC_PASSWORD=root_password
+ENV STORAGE_JDBC_URL=${JOOQ_JDBC_URL} \
+    STORAGE_JDBC_USERNAME=${JOOQ_JDBC_USERNAME} \
+    STORAGE_JDBC_PASSWORD=${JOOQ_JDBC_PASSWORD}
+
 RUN sbt clean WorkflowExecutionService/dist
 
 # Unzip the texera binary

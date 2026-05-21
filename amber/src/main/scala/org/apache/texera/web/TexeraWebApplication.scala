@@ -45,6 +45,10 @@ import org.apache.texera.web.resource.dashboard.user.project.{
   ProjectResource,
   PublicProjectResource
 }
+import org.apache.texera.web.resource.dashboard.user.cluster.{
+  ClusterResource,
+  ClusterCallbackResource
+}
 import org.apache.texera.web.resource.dashboard.user.quota.UserQuotaResource
 import org.apache.texera.web.resource.dashboard.user.workflow.{
   WorkflowAccessResource,
@@ -160,6 +164,8 @@ class TexeraWebApplication
     environment.jersey.register(classOf[UserQuotaResource])
     environment.jersey.register(classOf[AdminSettingsResource])
     environment.jersey.register(classOf[AIAssistantResource])
+    environment.jersey.register(classOf[ClusterResource])
+    environment.jersey.register(classOf[ClusterCallbackResource])
 
     AuthResource.createAdminUser()
 
