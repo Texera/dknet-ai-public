@@ -96,6 +96,7 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libtiff5-dev \
     libjpeg-dev \
+    libwebp-dev \
     unzip \
     openssh-client \
     gnupg \
@@ -121,6 +122,17 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
         make -j$(nproc) && make install && \
         rm -rf /tmp/R-4.3.3* && \
         R --version; \
+    fi
+
+# glmGamPoi (and other RcppArmadillo-dependent Bioc packages) require C++14+,
+# but their bundled Makevars hardcode -std=gnu++11. Pin a user Makevars that
+# forces C++17 for both CXX11STD and CXX14STD so the package compiles cleanly.
+# Also pin RETICULATE_PYTHON to the conda interpreter so R's reticulate package
+# does not try to bootstrap a separate venv at runtime.
+RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
+        mkdir -p /root/.R && \
+        printf 'CXX11STD = -std=gnu++17\nCXX14STD = -std=gnu++17\n' > /root/.R/Makevars && \
+        printf 'RETICULATE_PYTHON=/opt/conda/bin/python3\n' >> /usr/local/lib/R/etc/Renviron.site; \
     fi
 
 ENV CONDA_DIR /opt/conda
@@ -166,7 +178,7 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
                     cat('  coro: ', as.character(packageVersion('coro')), '\n'); \
                     cat('  aws.s3: ', as.character(packageVersion('aws.s3')), '\n')" && \
         Rscript -e "options(repos = c(CRAN = 'https://cran.r-project.org')); \
-                    install.packages(c('BiocManager', 'R.utils', 'ggplotify', 'bench', 'reticulate', 'scSorter', 'igraph', 'leiden'), \
+                    install.packages(c('BiocManager', 'R.utils', 'ggplotify', 'bench', 'reticulate', 'igraph', 'leiden'), \
                       Ncpus = parallel::detectCores()); \
                     remotes::install_github('satijalab/seurat', ref = 'v5.2.1', upgrade = 'never'); \
                     remotes::install_github('immunogenomics/harmony', upgrade = 'never'); \
@@ -186,8 +198,29 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
                     remotes::install_version('nlme', version = '3.1-162', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('MASS', version = '7.3-60', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('SeuratObject', version = '5.0.2', repos = 'https://cran.r-project.org'); \
-                    BiocManager::install(c('SingleCellExperiment', 'scDblFinder', 'glmGamPoi'), \
-                      Ncpus = parallel::detectCores())" ; \
+                    remotes::install_version('scSorter', version = '0.0.2', repos = 'https://cran.r-project.org', upgrade = 'never'); \
+                    BiocManager::install(c('SingleCellExperiment', 'scDblFinder', 'glmGamPoi', 'BiocParallel'), \
+                      update = FALSE, ask = FALSE, version = '3.18', \
+                      Ncpus = parallel::detectCores()); \
+                    stopifnot( \
+                      requireNamespace('Seurat', quietly = TRUE), \
+                      requireNamespace('harmony', quietly = TRUE), \
+                      requireNamespace('scSorter', quietly = TRUE), \
+                      requireNamespace('scDblFinder', quietly = TRUE), \
+                      requireNamespace('glmGamPoi', quietly = TRUE), \
+                      requireNamespace('SingleCellExperiment', quietly = TRUE), \
+                      requireNamespace('reticulate', quietly = TRUE) \
+                    )" ; \
+    fi
+
+# Python-side packages that reticulate-backed R operators import at runtime
+# (leiden community detection uses python-igraph + leidenalg via reticulate).
+# Pinned to the versions verified working in the live pod on 2026-05-20.
+RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
+        /opt/conda/bin/pip install --no-cache-dir \
+            leidenalg==0.11.0 \
+            igraph==1.0.0 \
+            texttable==1.7.0; \
     fi
 
 ENV LD_LIBRARY_PATH=/usr/local/lib/R/lib:$LD_LIBRARY_PATH
