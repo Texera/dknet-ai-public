@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y \
 
 # Add .git for runtime calls to jgit from OPversion
 COPY .git .git
-COPY LICENSE NOTICE DISCLAIMER ./
+COPY LICENSE NOTICE DISCLAIMER-WIP ./
 # Required by WorkflowOperator's managedResources task during sbt compile.
 COPY licenses/ licenses/
 
@@ -124,29 +124,16 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
         R --version; \
     fi
 
-# glmGamPoi (and other RcppArmadillo-dependent Bioc packages) require C++14+,
-# but their bundled Makevars hardcode -std=gnu++11. Pin a user Makevars that
-# forces C++17 for both CXX11STD and CXX14STD so the package compiles cleanly.
-# Also pin RETICULATE_PYTHON to the conda interpreter so R's reticulate package
-# does not try to bootstrap a separate venv at runtime.
-RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
-        mkdir -p /root/.R && \
-        printf 'CXX11STD = -std=gnu++17\nCXX14STD = -std=gnu++17\n' > /root/.R/Makevars && \
-        printf 'RETICULATE_PYTHON=/opt/conda/bin/python3\n' >> /usr/local/lib/R/etc/Renviron.site; \
-    fi
-
 ENV CONDA_DIR /opt/conda
 RUN mkdir -p /tmp/miniconda3 && \
     curl -fsSL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o /tmp/miniconda.sh && \
     bash /tmp/miniconda.sh -b -u -p $CONDA_DIR && \
     rm /tmp/miniconda.sh
 
-ENV PATH=$CONDA_DIR/bin:$PATH
-
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda install -y python=3.10 && \
-    conda init bash
+RUN /opt/conda/bin/conda config --add channels conda-forge && \
+    /opt/conda/bin/conda config --set channel_priority strict && \
+    /opt/conda/bin/conda config --remove channels defaults && \
+    /opt/conda/bin/conda init bash
 
 # Install Python packages
 RUN pip3 install --upgrade pip setuptools wheel && \
@@ -178,10 +165,14 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
                     cat('  coro: ', as.character(packageVersion('coro')), '\n'); \
                     cat('  aws.s3: ', as.character(packageVersion('aws.s3')), '\n')" && \
         Rscript -e "options(repos = c(CRAN = 'https://cran.r-project.org')); \
-                    install.packages(c('BiocManager', 'R.utils', 'ggplotify', 'bench', 'reticulate', 'igraph', 'leiden'), \
+                    install.packages(c('BiocManager', 'R.utils', 'ggplotify', 'bench', 'igraph', 'leiden'), \
                       Ncpus = parallel::detectCores()); \
+                    remotes::install_version('reticulate', version='1.36.1', upgrade='never', repos='https://cran.r-project.org', Ncpus=parallel::detectCores()); \
                     remotes::install_github('satijalab/seurat', ref = 'v5.2.1', upgrade = 'never'); \
-                    remotes::install_github('immunogenomics/harmony', upgrade = 'never'); \
+                    dir.create('~/.R', showWarnings = FALSE); \
+                    writeLines('CXX11STD = -std=gnu++14', '~/.R/Makevars'); \
+                    remotes::install_version('harmony', version = '0.1.1', upgrade = 'never', repos = 'https://cran.r-project.org'); \
+                    file.remove('~/.R/Makevars'); \
                     remotes::install_version('ggplot2', version = '3.5.2', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('future', version = '1.34.0', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('jsonlite', version = '1.9.1', upgrade = 'never', repos = 'https://cran.r-project.org'); \
@@ -198,29 +189,9 @@ RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
                     remotes::install_version('nlme', version = '3.1-162', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('MASS', version = '7.3-60', upgrade = 'never', repos = 'https://cran.r-project.org'); \
                     remotes::install_version('SeuratObject', version = '5.0.2', repos = 'https://cran.r-project.org'); \
-                    remotes::install_version('scSorter', version = '0.0.2', repos = 'https://cran.r-project.org', upgrade = 'never'); \
-                    BiocManager::install(c('SingleCellExperiment', 'scDblFinder', 'glmGamPoi', 'BiocParallel'), \
-                      update = FALSE, ask = FALSE, version = '3.18', \
-                      Ncpus = parallel::detectCores()); \
-                    stopifnot( \
-                      requireNamespace('Seurat', quietly = TRUE), \
-                      requireNamespace('harmony', quietly = TRUE), \
-                      requireNamespace('scSorter', quietly = TRUE), \
-                      requireNamespace('scDblFinder', quietly = TRUE), \
-                      requireNamespace('glmGamPoi', quietly = TRUE), \
-                      requireNamespace('SingleCellExperiment', quietly = TRUE), \
-                      requireNamespace('reticulate', quietly = TRUE) \
-                    )" ; \
-    fi
-
-# Python-side packages that reticulate-backed R operators import at runtime
-# (leiden community detection uses python-igraph + leidenalg via reticulate).
-# Pinned to the versions verified working in the live pod on 2026-05-20.
-RUN if [ "$WITH_R_SUPPORT" = "true" ]; then \
-        /opt/conda/bin/pip install --no-cache-dir \
-            leidenalg==0.11.0 \
-            igraph==1.0.0 \
-            texttable==1.7.0; \
+                    remotes::install_version('scSorter', version = '0.0.2', upgrade = 'never', repos = 'https://cran.r-project.org'); \
+                    BiocManager::install(c('SingleCellExperiment', 'scDblFinder', 'glmGamPoi'), \
+                      Ncpus = parallel::detectCores())" ; \
     fi
 
 ENV LD_LIBRARY_PATH=/usr/local/lib/R/lib:$LD_LIBRARY_PATH
@@ -234,15 +205,14 @@ COPY --from=build /texera/amber/src/main/resources /texera/amber/src/main/resour
 # Copy code for python UDF
 COPY --from=build /texera/amber/src/main/python /texera/amber/src/main/python
 # Copy ASF licensing files
-COPY --from=build /texera/LICENSE /texera/NOTICE /texera/DISCLAIMER /texera/
+COPY --from=build /texera/LICENSE /texera/NOTICE /texera/DISCLAIMER-WIP /texera/
 
 # Remove application.ini if it exists — the SBT launcher doesn't recognize
 # --add-opens as a JVM flag and passes it as an app arg, causing a crash.
 # The --add-opens flags are instead passed via JAVA_OPTS env var.
 RUN rm -f conf/application.ini
 
-# Run ttyd web shell on 7681 alongside the cu-master process so an in-pod
-# REPL is reachable for R-UDF debugging without kubectl exec.
+CMD ["bin/computing-unit-master"]
 CMD ["/bin/bash","-lc", "\
   ttyd -p 7681 -t disableLeaveAlert=true /bin/bash & \
   exec bin/computing-unit-master"]
