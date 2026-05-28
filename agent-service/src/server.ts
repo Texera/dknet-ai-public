@@ -20,10 +20,11 @@
 import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { createOpenAI } from "@ai-sdk/openai";
+import { randomUUID } from "crypto";
 import { TexeraAgent } from "./agent/texera-agent";
 import { getVisibleResultHeaders } from "./agent/tools/tools-utility";
 import { getBackendConfig } from "./api/backend-api";
-import { extractUserFromToken, validateToken } from "./api/auth-api";
+import { extractUserFromToken, validateToken, isAuthRequired, getUidFromToken } from "./api/auth-api";
 import { retrieveWorkflow } from "./api/workflow-api";
 import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
 import { env } from "./config/env";
@@ -42,14 +43,54 @@ import type {
 import { OperatorResultSerializationMode } from "./types/agent";
 
 const agentStore = new Map<string, TexeraAgent>();
-let agentCounter = 0;
+
+// agentId -> owning user's uid. Recorded at creation time from the delegate
+// token, independently of whether a workflow was loaded, so ownership does not
+// depend on the backend being reachable.
+const agentOwners = new Map<string, number>();
+
+// Bearer token from the Authorization header (HTTP) or the access-token query
+// parameter (WebSocket, since browsers cannot set headers on the WS handshake).
+function extractBearerToken(
+  headers: Record<string, string | undefined> | undefined,
+  query: Record<string, string | undefined> | undefined
+): string | undefined {
+  const auth = headers?.authorization;
+  if (auth && auth.startsWith("Bearer ")) {
+    const token = auth.slice("Bearer ".length).trim();
+    if (token) return token;
+  }
+  const q = query?.["access-token"];
+  return typeof q === "string" && q.length > 0 ? q : undefined;
+}
+
+// Enforces authentication and per-user isolation. A no-op when AGENT_AUTH_REQUIRED
+// is off, preserving the service's prior permissive behavior. Throws errors the
+// router's onError maps to 401/403.
+function authorizeAgentAccess(agentId: string, token: string | undefined): void {
+  if (!isAuthRequired()) return;
+  if (!token || !validateToken(token)) {
+    throw new Error("Unauthorized");
+  }
+  const ownerUid = agentOwners.get(agentId);
+  // Ownerless agents (created before enforcement was enabled) are accessible to
+  // any authenticated user; owned agents only to their owner.
+  if (ownerUid !== undefined && getUidFromToken(token) !== ownerUid) {
+    throw new Error("Forbidden");
+  }
+}
 
 async function createAgentInstance(
   modelType: string,
-  customName?: string
+  customName?: string,
+  ownerUid?: number
 ): Promise<{ agentId: string; agent: TexeraAgent }> {
-  const agentId = `agent-${++agentCounter}`;
+  const agentId = `agent-${randomUUID()}`;
   const config = getBackendConfig();
+
+  if (ownerUid !== undefined) {
+    agentOwners.set(agentId, ownerUid);
+  }
 
   const openai = createOpenAI({
     baseURL: `${config.modelsEndpoint}/api`,
@@ -175,6 +216,14 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       set.status = 401;
       return { error: "User token is required" };
     }
+    if (errorMessage === "Unauthorized") {
+      set.status = 401;
+      return { error: "Unauthorized" };
+    }
+    if (errorMessage === "Forbidden") {
+      set.status = 403;
+      return { error: "Forbidden" };
+    }
     if (errorMessage === "modelType is required") {
       set.status = 400;
       return { error: "modelType is required" };
@@ -182,21 +231,59 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
     set.status = 500;
     return { error: errorMessage || "Internal server error" };
   })
-  .get("/", () => {
-    const agentList = Array.from(agentStore.entries()).map(([id, agent]) => getAgentInfo(id, agent));
-    return { agents: agentList };
+  // Enforce ownership for every /:id route in one place. List and create carry
+  // no :id and are authorized in their own handlers.
+  .onBeforeHandle(({ params, headers, query }) => {
+    const id = (params as Record<string, string | undefined>)?.id;
+    if (!id) return;
+    if (!agentStore.has(id)) throw new Error("Agent not found");
+    authorizeAgentAccess(id, extractBearerToken(headers as any, query as any));
+  })
+  .get("/", ({ headers, query }) => {
+    const entries = Array.from(agentStore.entries());
+
+    if (!isAuthRequired()) {
+      return { agents: entries.map(([id, agent]) => getAgentInfo(id, agent)) };
+    }
+
+    const token = extractBearerToken(headers as any, query as any);
+    if (!token || !validateToken(token)) {
+      throw new Error("Unauthorized");
+    }
+    // Scope the listing to the caller's own agents (plus any ownerless agents
+    // created before enforcement was enabled).
+    const uid = getUidFromToken(token);
+    const visible = entries.filter(([id]) => {
+      const ownerUid = agentOwners.get(id);
+      return ownerUid === undefined || ownerUid === uid;
+    });
+    return { agents: visible.map(([id, agent]) => getAgentInfo(id, agent)) };
   })
 
   .post(
     "/",
-    async ({ body }) => {
+    async ({ body, headers }) => {
       const { modelType, name, settings } = body as CreateAgentRequest;
 
       if (!modelType) {
         throw new Error("modelType is required");
       }
 
-      const { agentId, agent } = await createAgentInstance(modelType, name);
+      // When enforcement is on, every agent must have an owner, so a token is required.
+      const token = extractBearerToken(headers as any, undefined);
+      if (isAuthRequired() && !token) {
+        throw new Error("Unauthorized");
+      }
+
+      let ownerUid: number | undefined;
+      if (token) {
+        if (!validateToken(token)) {
+          throw new Error("Invalid or expired token");
+        }
+        ownerUid = getUidFromToken(token);
+      }
+
+      const { agentId, agent } = await createAgentInstance(modelType, name, ownerUid);
 
       if (settings) {
         log.info(
@@ -261,6 +348,7 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
 
     agent.destroy();
     agentStore.delete(id);
+    agentOwners.delete(id);
     return { deleted: true };
   })
 
@@ -511,6 +599,19 @@ export function buildApp() {
           return;
         }
 
+        // Browsers cannot set headers on a WS handshake, so the token is read
+        // from the access-token query parameter (consistent with the other
+        // Texera websocket clients).
+        try {
+          const token = extractBearerToken((ws.data as any).headers, (ws.data as any).query);
+          authorizeAgentAccess(agentId, token);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unauthorized";
+          ws.send(JSON.stringify({ type: "error", error: message }));
+          ws.close();
+          return;
+        }
+
         agent.addWebsocket(ws);
 
         const initMessage: WsOutgoingMessage = {
@@ -614,7 +715,7 @@ export function buildApp() {
 // Reset module-level state. Used by tests to start each case from a clean store.
 export function _resetAgentStoreForTests(): void {
   agentStore.clear();
-  agentCounter = 0;
+  agentOwners.clear();
 }
 
 export function _getAgentForTests(agentId: string): TexeraAgent | undefined {
