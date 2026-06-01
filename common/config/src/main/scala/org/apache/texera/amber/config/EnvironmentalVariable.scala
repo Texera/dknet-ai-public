@@ -42,14 +42,6 @@ object EnvironmentalVariable {
   // resolve datasets without holding Postgres credentials (issue #5011).
   val ENV_FILE_SERVICE_RESOLVE_PATH_ENDPOINT = "FILE_SERVICE_RESOLVE_PATH_ENDPOINT"
 
-  // Endpoint of the dashboard service that handles execution-metadata operations over HTTP, so a
-  // computing unit can persist/read execution metadata without holding Postgres credentials (#5011).
-  val ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT =
-    "DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT"
-
-  // When "true", the computing unit routes execution-metadata operations over HTTP instead of JDBC.
-  val ENV_EXECUTION_METADATA_REMOTE = "EXECUTION_METADATA_REMOTE"
-
   /**
     * Auth related vars
     */

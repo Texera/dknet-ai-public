@@ -19,7 +19,7 @@
 
 package org.apache.texera.web.service
 
-import org.apache.texera.amber.config.EnvironmentalVariable
+import org.apache.texera.amber.config.{ApplicationConfig, EnvironmentalVariable}
 import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
 import org.apache.texera.amber.util.JSONUtils.objectMapper
 
@@ -44,11 +44,7 @@ object RemoteExecutionMetadata {
     sys.env.getOrElse(EnvironmentalVariable.ENV_USER_JWT_TOKEN, "").trim
 
   private lazy val baseEndpoint: String =
-    sys.env
-      .get(EnvironmentalVariable.ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT)
-      .map(_.trim)
-      .filter(_.nonEmpty)
-      .getOrElse("http://localhost:8080/api/internal/execution-metadata")
+    ApplicationConfig.dashboardServiceExecutionMetadataEndpoint.trim
 
   /** Remote routing is active only when this process has no database connection of its own. */
   def enabled: Boolean = !org.apache.texera.dao.SqlServer.isInitialized

@@ -25,40 +25,24 @@ import io.dropwizard.Configuration
 import io.dropwizard.configuration.{EnvironmentVariableSubstitutor, SubstitutingSourceProvider}
 import io.dropwizard.setup.{Bootstrap, Environment}
 import io.dropwizard.websockets.WebsocketBundle
-import org.apache.texera.amber.config.{ApplicationConfig, EnvironmentalVariable, StorageConfig}
-import org.apache.texera.amber.core.storage.DocumentFactory
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.workflow.{PhysicalPlan, WorkflowContext}
 import org.apache.texera.amber.engine.architecture.controller.ControllerConfig
-import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState.{
-  COMPLETED,
-  FAILED
-}
-import org.apache.texera.amber.engine.common.AmberRuntime.scheduleRecurringCallThroughActorSystem
-import org.apache.texera.amber.engine.common.Utils.maptoStatusCode
 import org.apache.texera.amber.engine.common.client.AmberClient
-import org.apache.texera.amber.engine.common.storage.SequentialRecordStorage
 import org.apache.texera.amber.engine.common.{AmberRuntime, Utils}
-import org.apache.texera.amber.util.JSONUtils.objectMapper
 import org.apache.texera.amber.util.{ObjectMapperUtils, PhysicalPlanSerdeModule}
 import org.apache.commons.jcs3.access.exception.InvalidArgumentException
-import org.apache.texera.auth.SessionUser
-import org.apache.texera.dao.SqlServer
-import org.apache.texera.dao.jooq.generated.tables.pojos.WorkflowExecutions
-import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
 import org.apache.texera.web.resource.{
   SyncExecutionResource,
   WebsocketPayloadSizeTuner,
   WorkflowWebsocketResource
 }
-import org.apache.texera.web.service.ExecutionsMetadataPersistService
 import org.eclipse.jetty.server.session.SessionHandler
 import org.eclipse.jetty.servlet.FilterHolder
 import org.eclipse.jetty.websocket.server.WebSocketUpgradeFilter
 import org.apache.texera.web.resource.pythonvirtualenvironment.PveResource
 import org.apache.texera.web.resource.pythonvirtualenvironment.PveWebsocketResource
 
-import java.net.URI
 import java.time.Duration
 import scala.annotation.tailrec
 import scala.concurrent.duration.DurationInt
@@ -143,20 +127,9 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
   override def run(configuration: Configuration, environment: Environment): Unit = {
     ObjectMapperUtils.warmupObjectMapperForOperatorsSerde()
 
-    // In remote mode the CU routes execution-metadata operations over HTTP to the dashboard
-    // service and holds no Postgres credentials of its own (issue #5011).
-    val remote =
-      EnvironmentalVariable
-        .get(EnvironmentalVariable.ENV_EXECUTION_METADATA_REMOTE)
-        .contains("true")
-
-    if (!remote) {
-      SqlServer.initConnection(
-        StorageConfig.jdbcUrl,
-        StorageConfig.jdbcUsername,
-        StorageConfig.jdbcPassword
-      )
-    }
+    // The Computing Unit never connects to Postgres: it routes execution-metadata operations over
+    // HTTP to the dashboard service and holds no database credentials of its own (issue #5011).
+    // Because SqlServer is never initialized here, RemoteExecutionMetadata is always active.
 
     environment.jersey.setUrlPattern("/api/*")
 
@@ -175,49 +148,23 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
     environment.jersey.register(classOf[PveResource])
 
     // The Computing Unit performs no JWT authentication and holds no JWT secret (issue #5011): no
-    // JwtAuthFilter and no RolesAllowedDynamicFeature are registered, so @RolesAllowed is not
-    // enforced and the execution endpoints are open — the client ships a pre-compiled physical
-    // plan. The value-factory binder below is kept ONLY so that @Auth-annotated parameters on
-    // co-registered dashboard resources stay injectable (resolving to no authenticated user);
-    // it does not validate tokens. Contrast TexeraWebApplication, which keeps full JWT auth.
-    environment.jersey.register(
-      new io.dropwizard.auth.AuthValueFactoryProvider.Binder[SessionUser](classOf[SessionUser])
-    )
+    // JwtAuthFilter, no RolesAllowedDynamicFeature, and no @Auth-injection binder are registered —
+    // none of its endpoints are authenticated. The client ships a pre-compiled physical plan, and
+    // anything needing auth (e.g. result export) is served by the dashboard service instead.
+    // Contrast TexeraWebApplication, which keeps full JWT auth.
     environment
       .servlets()
       .addServletListeners(
         new WebsocketPayloadSizeTuner(ApplicationConfig.maxWorkflowWebsocketRequestPayloadSizeKb)
       )
 
-    // Result/log cleanup needs a database connection and is owned by the dashboard service in
-    // remote mode, so skip it on the computing unit when running remotely.
-    if (!remote) {
-      val timeToLive: Int = ApplicationConfig.sinkStorageTTLInSecs
-      if (ApplicationConfig.cleanupAllExecutionResults) {
-        // do one time cleanup of collections that were not closed gracefully before restart/crash
-        // retrieve all executions that were executing before the reboot.
-        val allExecutionsBeforeRestart: List[WorkflowExecutions] =
-          WorkflowExecutionsResource.getExpiredExecutionsWithResultOrLog(-1)
-        cleanExecutions(
-          allExecutionsBeforeRestart,
-          statusByte => {
-            if (statusByte != maptoStatusCode(COMPLETED)) {
-              maptoStatusCode(FAILED) // for incomplete executions, mark them as failed.
-            } else {
-              statusByte
-            }
-          }
-        )
-      }
-      scheduleRecurringCallThroughActorSystem(
-        2.seconds,
-        ApplicationConfig.sinkStorageCleanUpCheckIntervalInSecs.seconds
-      ) {
-        recurringCheckExpiredResults(timeToLive)
-      }
-    }
+    // Expired-result/log cleanup needs a database connection, so it is owned by the dashboard
+    // service; the computing unit (which holds no Postgres credentials) does not run it.
 
-    environment.jersey.register(classOf[WorkflowExecutionsResource])
+    // The computing unit does not expose the /executions HTTP resource: result export (its only
+    // client-facing endpoints) is handled by the dashboard service, which has the auth, database,
+    // and shared Iceberg (Lakekeeper) catalog access to read and export results. The CU still calls
+    // WorkflowExecutionsResource's companion-object helpers internally; it just doesn't serve them.
     environment.jersey.register(classOf[SyncExecutionResource])
 
     // Route request logs through SLF4J, controlled by TEXERA_SERVICE_LOG_LEVEL.
@@ -247,77 +194,4 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
     )
   }
 
-  /**
-    * This function drops the collections.
-    * MongoDB doesn't have an API of drop collection where collection name in (from a subquery), so the implementation is to retrieve
-    * the entire list of those documents that have expired, then loop the list to drop them one by one
-    */
-  private def cleanExecutions(
-      executions: List[WorkflowExecutions],
-      statusChangeFunc: Short => Short
-  ): Unit = {
-    // drop the collection and update the status to ABORTED
-    executions.foreach(execEntry => {
-      dropCollections(execEntry.getResult)
-      deleteReplayLog(execEntry.getLogLocation)
-      // then delete the pointer from mySQL
-      val executionIdentity = ExecutionIdentity(execEntry.getEid.longValue())
-      ExecutionsMetadataPersistService.tryUpdateExistingExecution(executionIdentity) { execution =>
-        execution.setResult("")
-        execution.setLogLocation(null)
-        execution.setStatus(statusChangeFunc(execution.getStatus))
-      }
-    })
-  }
-
-  private def dropCollections(result: String): Unit = {
-    if (result == null || result.isEmpty) {
-      return
-    }
-    // TODO: merge this logic to the server-side in-mem cleanup
-    // parse the JSON
-    try {
-      val node = objectMapper.readTree(result)
-      val collectionEntries = node.get("results")
-      // loop every collection and drop it
-      collectionEntries.forEach(collection => {
-        val storageType = collection.get("storageType").asText()
-        val collectionName = collection.get("storageKey").asText()
-        storageType match {
-          case DocumentFactory.ICEBERG =>
-          // rely on the server-side result cleanup logic.
-        }
-      })
-    } catch {
-      case e: Throwable =>
-        logger.warn("result collection cleanup failed.", e)
-    }
-  }
-
-  private def deleteReplayLog(logLocation: String): Unit = {
-    if (logLocation == null || logLocation.isEmpty) {
-      return
-    }
-    val uri = new URI(logLocation)
-    try {
-      val storage = SequentialRecordStorage.getStorage(Some(uri))
-      storage.deleteStorage()
-    } catch {
-      case throwable: Throwable =>
-        logger.warn(s"failed to delete log at $logLocation", throwable)
-    }
-  }
-
-  /**
-    * This function is called periodically and checks all expired collections and deletes them
-    */
-  private def recurringCheckExpiredResults(
-      timeToLive: Int
-  ): Unit = {
-    // retrieve all executions that are completed and their last update time goes beyond the ttl
-    val expiredResults: List[WorkflowExecutions] =
-      WorkflowExecutionsResource.getExpiredExecutionsWithResultOrLog(timeToLive)
-    // drop the collections and clean the logs
-    cleanExecutions(expiredResults, statusByte => statusByte)
-  }
 }
