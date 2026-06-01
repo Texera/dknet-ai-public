@@ -237,7 +237,6 @@ agentService:
     # Authenticates the agent service to the in-cluster LLM gateway
     # (access-control-service / LiteLLM), not to the upstream provider.
     llmApiKey: "dummy"
-    agentStateDir: ""
     mcpRequestTimeoutMs: 30000
 
 bioMcpService:

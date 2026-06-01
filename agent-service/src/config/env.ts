@@ -38,6 +38,10 @@ const EnvSchema = z.object({
 
   MCP_SERVERS: z.string().default("[]"),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+
+  STORAGE_JDBC_URL: z.string().default("jdbc:postgresql://localhost:5432/texera_db?currentSchema=texera_db,public"),
+  STORAGE_JDBC_USERNAME: z.string().default("postgres"),
+  STORAGE_JDBC_PASSWORD: z.string().default("postgres"),
 });
 
 export const env = EnvSchema.parse(process.env);
