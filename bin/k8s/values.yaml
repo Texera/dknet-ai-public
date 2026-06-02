@@ -115,6 +115,7 @@ lakefs:
 
 lakekeeper:
   enabled: true
+  helmWait: true
   postgresql:
     enabled: false
   internalOpenFGA: false
@@ -305,9 +306,9 @@ texeraEnvVars:
   - name: MAX_NUM_OF_RUNNING_COMPUTING_UNITS_PER_USER
     value: "10"
   - name: KUBERNETES_COMPUTING_UNIT_CPU_LIMIT_OPTIONS
-    value: "2"
+    value: "1,2"
   - name: KUBERNETES_COMPUTING_UNIT_MEMORY_LIMIT_OPTIONS
-    value: "2Gi"
+    value: "1Gi,2Gi"
   - name: KUBERNETES_COMPUTING_UNIT_GPU_LIMIT_OPTIONS
     value: "0"
   - name: COMPUTING_UNIT_LOCAL_ENABLED
@@ -386,6 +387,9 @@ metrics-server:
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml
+
+  https:
+    enabled: true
 
   # The hostname for the Gateway listener (HTTP/HTTPS).
   # e.g., "texera.example.com"
