@@ -73,7 +73,7 @@ object RemoteExecutionMetadata {
 
   def createExecution(
       workflowId: Long,
-      uid: Option[Integer],
+      uid: Integer,
       executionName: String,
       environmentVersion: String,
       computingUnitId: Integer,
@@ -81,10 +81,9 @@ object RemoteExecutionMetadata {
   ): ExecutionIdentity = {
     val body = objectMapper.createObjectNode()
     body.put("workflowId", workflowId)
-    uid match {
-      case Some(value) => body.put("uid", value.intValue())
-      case None        => body.putNull("uid")
-    }
+    // A no-auth computing unit has no local user, so uid may be null; the dashboard service then
+    // resolves the owner from the forwarded user token.
+    if (uid != null) body.put("uid", uid.intValue()) else body.putNull("uid")
     body.put("executionName", executionName)
     body.put("environmentVersion", environmentVersion)
     body.put("computingUnitId", computingUnitId.intValue())

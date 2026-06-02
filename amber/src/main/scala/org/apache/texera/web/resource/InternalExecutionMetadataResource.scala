@@ -79,7 +79,7 @@ class InternalExecutionMetadataResource {
     // this metadata call (the holder of the CU's USER_JWT_TOKEN). workflow_executions.uid is NOT NULL.
     val eid = ExecutionsMetadataPersistService.insertNewExecution(
       WorkflowIdentity(request.workflowId),
-      request.uid.orElse(Option(user.getUid)),
+      request.uid.getOrElse(user.getUid),
       request.executionName,
       request.environmentVersion,
       request.computingUnitId

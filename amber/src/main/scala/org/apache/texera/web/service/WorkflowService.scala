@@ -190,6 +190,9 @@ class WorkflowService(
       executionService.getValue.unsubscribeAll()
     }
 
+    // The execution owner is optional here: a no-auth computing unit has no local user, so it sends
+    // no uid and the dashboard service resolves the owner from the forwarded token. The DB's NOT NULL
+    // constraint on uid is surfaced as a readable error by ExecutionsMetadataPersistService if needed.
     val (uidOpt, userEmailOpt) = userOpt.map(user => (user.getUid, user.getEmail)).unzip
 
     val workflowContext: WorkflowContext = createWorkflowContext()
@@ -210,7 +213,7 @@ class WorkflowService(
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
       workflowContext.workflowId,
-      uidOpt,
+      uidOpt.orNull,
       req.executionName,
       convertToJson(req.engineVersion),
       req.computingUnitId,
