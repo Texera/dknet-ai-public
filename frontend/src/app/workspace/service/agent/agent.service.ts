@@ -348,35 +348,50 @@ export class AgentService {
         })
       )
       .subscribe(response => {
-        const backendAgentIds = new Set(response.agents.map(a => a.id));
-
-        // Remove any local agents that don't exist on the backend
-        const localAgentIds = Array.from(this.agents.keys());
-        for (const localId of localAgentIds) {
-          if (!backendAgentIds.has(localId)) {
-            this.agents.delete(localId);
-            this.stopStatePolling(localId);
-          }
-        }
-
-        // Update local cache with backend state
-        for (const apiAgent of response.agents) {
-          const existingAgent = this.agents.get(apiAgent.id);
-          if (existingAgent) {
-            // Update state from backend
-            existingAgent.state = this.mapStateToAgentState(apiAgent.state);
-            const tracking = this.agentStateTracking.get(apiAgent.id);
-            if (tracking) {
-              tracking.stateSubject.next(existingAgent.state);
-            }
-          }
-        }
-
-        // Notify subscribers if there were changes
-        if (localAgentIds.length !== this.agents.size) {
-          this.agentChangeSubject.next();
-        }
+        this.updateAgentCacheFromBackend(response.agents);
+        this.agentChangeSubject.next();
       });
+  }
+
+  private apiAgentToAgentInfo(apiAgent: ApiAgentInfo): AgentInfo {
+    return {
+      id: apiAgent.id,
+      name: apiAgent.name,
+      modelType: apiAgent.modelType,
+      isBaselineMode: false,
+      createdAt: new Date(apiAgent.createdAt),
+      state: this.mapStateToAgentState(apiAgent.state),
+      delegate: apiAgent.delegate
+        ? {
+            userInfo: apiAgent.delegate.userInfo,
+            workflowId: apiAgent.delegate.workflowId,
+            workflowName: apiAgent.delegate.workflowName,
+          }
+        : undefined,
+      settings: apiAgent.settings,
+    };
+  }
+
+  private updateAgentCacheFromBackend(apiAgents: ApiAgentInfo[]): AgentInfo[] {
+    const agents = apiAgents.map(agent => this.apiAgentToAgentInfo(agent));
+    const backendAgentIds = new Set(agents.map(agent => agent.id));
+
+    for (const localId of Array.from(this.agents.keys())) {
+      if (!backendAgentIds.has(localId)) {
+        this.agents.delete(localId);
+        this.stopStatePolling(localId);
+      }
+    }
+
+    for (const agent of agents) {
+      this.agents.set(agent.id, agent);
+      const tracking = this.agentStateTracking.get(agent.id);
+      if (tracking && agent.state) {
+        tracking.stateSubject.next(agent.state);
+      }
+    }
+
+    return agents;
   }
 
   /**
@@ -869,44 +884,7 @@ export class AgentService {
     }
 
     return this.http.get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`, this.agentHeaders()).pipe(
-      map(response => {
-        const agents = response.agents.map(a => ({
-          id: a.id,
-          name: a.name,
-          modelType: a.modelType,
-          isBaselineMode: false,
-          createdAt: new Date(a.createdAt),
-          state: this.mapStateToAgentState(a.state),
-          delegate: a.delegate
-            ? {
-                userInfo: a.delegate.userInfo,
-                workflowId: a.delegate.workflowId,
-                workflowName: a.delegate.workflowName,
-              }
-            : undefined,
-          settings: a.settings,
-        }));
-
-        // Build a set of backend agent IDs for quick lookup
-        const backendAgentIds = new Set(agents.map(a => a.id));
-
-        // Remove any local agents that don't exist on the backend
-        // This handles the case when agent-service restarts
-        const localAgentIds = Array.from(this.agents.keys());
-        for (const localId of localAgentIds) {
-          if (!backendAgentIds.has(localId)) {
-            this.agents.delete(localId);
-            this.stopStatePolling(localId);
-          }
-        }
-
-        // Update local cache with agents from backend
-        for (const agent of agents) {
-          this.agents.set(agent.id, agent);
-        }
-
-        return agents;
-      }),
+      map(response => this.updateAgentCacheFromBackend(response.agents)),
       catchError(() => {
         this.clearAgentCache();
         return of([]);

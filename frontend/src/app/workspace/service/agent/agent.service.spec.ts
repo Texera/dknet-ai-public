@@ -45,6 +45,16 @@ describe("AgentService", () => {
     });
   }
 
+  function backendAgent(id = "backend-agent") {
+    return {
+      id,
+      name: "Backend Agent",
+      modelType: "m",
+      state: "AVAILABLE",
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   beforeEach(() => {
     localStorage.removeItem(TOKEN_KEY);
     TestBed.configureTestingModule({
@@ -114,5 +124,20 @@ describe("AgentService", () => {
     req.flush({ agents: [] });
 
     expect((service as any).agents.size).toBe(0);
+  });
+
+  it("loads backend agents and notifies subscribers when a user logs in", () => {
+    AuthService.setAccessToken("new-user-token");
+    const changes = vi.fn();
+    const subscription = service.agentChange$.subscribe(changes);
+
+    userService.userChangeSubject.next({ ...MOCK_USER, uid: 43 });
+    const req = http.expectOne("/api/agents");
+    expect(req.request.headers.get("Authorization")).toBe("Bearer new-user-token");
+    req.flush({ agents: [backendAgent("visible-agent")] });
+
+    expect(Array.from((service as any).agents.keys())).toEqual(["visible-agent"]);
+    expect(changes).toHaveBeenCalledTimes(1);
+    subscription.unsubscribe();
   });
 });
