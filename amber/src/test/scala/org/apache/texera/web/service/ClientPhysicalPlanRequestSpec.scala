@@ -59,7 +59,11 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
     (plan, agg.operatorIdentifier.id)
   }
 
-  private def buildRequest(plan: PhysicalPlan, viewOps: List[String]): WorkflowExecuteRequest =
+  private def buildRequest(
+      plan: PhysicalPlan,
+      viewOps: List[String],
+      userJwtToken: Option[String] = None
+  ): WorkflowExecuteRequest =
     WorkflowExecuteRequest(
       executionName = "test",
       engineVersion = "1.0",
@@ -68,7 +72,8 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
       replayFromExecution = None,
       workflowSettings = WorkflowSettings(dataTransferBatchSize = 400),
       emailNotificationEnabled = false,
-      computingUnitId = 0
+      computingUnitId = 0,
+      userJwtToken = userJwtToken
     )
 
   "A WorkflowExecuteRequest carrying a PhysicalPlan" should
@@ -91,6 +96,26 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
     plan.operators.foreach { op =>
       back.physicalPlan.getOperator(op.id).opExecInitInfo shouldBe op.opExecInitInfo
     }
+  }
+
+  it should "carry the issuing user's JWT through the round-trip (forwarded on the CU's outbound calls)" in {
+    val (plan, aggId) = compiledPlanAndViewOp()
+    val request: TexeraWebSocketRequest = buildRequest(plan, List(aggId), Some("jwt-abc-123"))
+
+    val json = objectMapper.writeValueAsString(request)
+    val back = objectMapper
+      .readValue(json, classOf[TexeraWebSocketRequest])
+      .asInstanceOf[WorkflowExecuteRequest]
+    back.userJwtToken shouldBe Some("jwt-abc-123")
+
+    // Absent token stays absent (the CU then falls back to its environment token, if any).
+    val noToken = objectMapper
+      .readValue(
+        objectMapper.writeValueAsString(buildRequest(plan, List(aggId)): TexeraWebSocketRequest),
+        classOf[TexeraWebSocketRequest]
+      )
+      .asInstanceOf[WorkflowExecuteRequest]
+    noToken.userJwtToken shouldBe None
   }
 
   "outputPortsForViewResult" should "select exactly the to-view operators' non-internal output ports" in {

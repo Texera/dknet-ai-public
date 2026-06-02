@@ -49,10 +49,11 @@ import scala.collection.mutable
 object WorkflowExecutionService {
   def getLatestExecutionId(
       workflowId: WorkflowIdentity,
-      computingUnitId: Int
+      computingUnitId: Int,
+      userJwtToken: Option[String] = None
   ): Option[ExecutionIdentity] = {
     WorkflowExecutionsResource
-      .getLatestExecutionID(workflowId.id.toInt, computingUnitId)
+      .getLatestExecutionID(workflowId.id.toInt, computingUnitId, userJwtToken)
       .map(eid => new ExecutionIdentity(eid.longValue()))
   }
 

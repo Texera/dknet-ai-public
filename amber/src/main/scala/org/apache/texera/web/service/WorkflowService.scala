@@ -193,11 +193,17 @@ class WorkflowService(
     val (uidOpt, userEmailOpt) = userOpt.map(user => (user.getUid, user.getEmail)).unzip
 
     val workflowContext: WorkflowContext = createWorkflowContext()
+    // The issuing user's JWT travels in the request; the CU forwards it on its outbound calls.
+    workflowContext.userJwtToken = req.userJwtToken
     var controllerConf = ControllerConfig.default
 
     // clean up results from previous run
     val previousExecutionId =
-      WorkflowExecutionService.getLatestExecutionId(workflowId, req.computingUnitId)
+      WorkflowExecutionService.getLatestExecutionId(
+        workflowId,
+        req.computingUnitId,
+        req.userJwtToken
+      )
     previousExecutionId.foreach(eid => {
       clearExecutionResources(eid)
     }) // TODO: change this behavior after enabling cache.
@@ -207,7 +213,8 @@ class WorkflowService(
       uidOpt,
       req.executionName,
       convertToJson(req.engineVersion),
-      req.computingUnitId
+      req.computingUnitId,
+      req.userJwtToken
     )
 
     if (ApplicationConfig.faultToleranceLogRootFolder.isDefined) {
@@ -316,6 +323,8 @@ class WorkflowService(
     * @param eid The execution identity to clean up resources for
     */
   private def clearExecutionResources(eid: ExecutionIdentity): Unit = {
+    // Drop any remembered per-execution token so the registry stays bounded to live executions.
+    RemoteExecutionMetadata.clearExecutionToken(eid.id)
     // Retrieve URIs for all resources associated with this execution
     val resultUris = WorkflowExecutionsResource.getResultUrisByExecutionId(eid)
     val consoleMessagesUris = WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId(eid)

@@ -65,7 +65,9 @@ case class SyncExecutionRequest(
     targetOperatorIds: List[String],
     timeoutSeconds: Int,
     maxOperatorResultCharLimit: Int,
-    maxOperatorResultCellCharLimit: Int
+    maxOperatorResultCellCharLimit: Int,
+    // JWT of the issuing user; forwarded by the CU on its outbound calls (see WorkflowExecuteRequest).
+    userJwtToken: Option[String] = None
 )
 
 case class ConsoleMessageInfo(
@@ -157,7 +159,8 @@ class SyncExecutionResource extends LazyLogging {
             WorkflowSettings(dataTransferBatchSize = ApplicationConfig.defaultDataTransferBatchSize)
           ),
         emailNotificationEnabled = false,
-        computingUnitId = computingUnitId
+        computingUnitId = computingUnitId,
+        userJwtToken = request.userJwtToken
       )
 
       // No authenticated user on the CU; the execution owner is resolved by the dashboard service

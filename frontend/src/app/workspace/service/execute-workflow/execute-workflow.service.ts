@@ -49,6 +49,7 @@ import { intersection } from "../../../common/util/set";
 import { WorkflowSettings } from "../../../common/type/workflow";
 
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
+import { AuthService } from "../../../common/service/user/auth.service";
 
 // TODO: change this declaration
 export const FORM_DEBOUNCE_TIME_MS = 150;
@@ -269,6 +270,9 @@ export class ExecuteWorkflowService {
           workflowSettings: workflowSettings,
           emailNotificationEnabled: emailNotificationEnabled,
           computingUnitId: computingUnitId, // Include the computing unit ID
+          // Forward the issuing user's token so the Computing Unit acts on their behalf for
+          // execution-metadata and dataset access (it holds no static token of its own).
+          userJwtToken: AuthService.getAccessToken() ?? undefined,
         };
         this.workflowWebsocketService.send("WorkflowExecuteRequest", workflowExecuteRequest);
       });

@@ -100,9 +100,13 @@ object WorkflowExecutionsResource {
     * @param wid workflow id
     * @return Integer
     */
-  def getLatestExecutionID(wid: Integer, cuid: Integer): Option[Integer] = {
+  def getLatestExecutionID(
+      wid: Integer,
+      cuid: Integer,
+      userJwtToken: Option[String] = None
+  ): Option[Integer] = {
     if (RemoteExecutionMetadata.enabled) {
-      return RemoteExecutionMetadata.getLatestExecutionId(wid, cuid)
+      return RemoteExecutionMetadata.getLatestExecutionId(wid, cuid, userJwtToken)
     }
     val executions = context
       .select(WORKFLOW_EXECUTIONS.EID)

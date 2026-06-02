@@ -51,6 +51,9 @@ export interface WorkflowExecuteRequest
     // Unit runs it directly without compiling. opsToViewResult marks which operators' results to store.
     physicalPlan: PhysicalPlan;
     opsToViewResult: ReadonlyArray<string>;
+    // JWT of the issuing user; the Computing Unit forwards it on its outbound calls (execution
+    // metadata, dataset access) instead of holding a static token.
+    userJwtToken?: string;
   }> {}
 
 export interface ReplayExecutionInfo

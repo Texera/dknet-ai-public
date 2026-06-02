@@ -38,8 +38,9 @@ import java.nio.charset.StandardCharsets
   */
 object RemoteDatasetResolver {
 
-  private lazy val userJwtToken: String =
-    sys.env.getOrElse(EnvironmentalVariable.ENV_USER_JWT_TOKEN, "").trim
+  // The issuing user's per-execution token, bound to the worker's DP thread (see
+  // UserJwtTokenProvider), falling back to the USER_JWT_TOKEN environment variable.
+  private def userJwtToken: String = UserJwtTokenProvider.currentToken
 
   /**
     * The file-service endpoint that resolves a dataset path. If not set explicitly, it is derived

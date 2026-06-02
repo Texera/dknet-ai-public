@@ -55,7 +55,8 @@ object ExecutionsMetadataPersistService extends LazyLogging {
       uid: Option[Integer],
       executionName: String,
       environmentVersion: String,
-      computingUnitId: Integer
+      computingUnitId: Integer,
+      userJwtToken: Option[String] = None
   ): ExecutionIdentity = {
     if (RemoteExecutionMetadata.enabled) {
       return RemoteExecutionMetadata.createExecution(
@@ -63,7 +64,8 @@ object ExecutionsMetadataPersistService extends LazyLogging {
         uid,
         executionName,
         environmentVersion,
-        computingUnitId
+        computingUnitId,
+        userJwtToken
       )
     }
     // first retrieve the latest version of this workflow

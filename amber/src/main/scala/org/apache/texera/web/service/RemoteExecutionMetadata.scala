@@ -25,6 +25,7 @@ import org.apache.texera.amber.util.JSONUtils.objectMapper
 
 import java.net.{HttpURLConnection, URI, URL, URLEncoder}
 import java.nio.charset.StandardCharsets
+import scala.collection.concurrent.TrieMap
 
 /**
   * Routes execution-metadata operations to the dashboard service over HTTP, instead of querying
@@ -40,7 +41,9 @@ import java.nio.charset.StandardCharsets
   */
 object RemoteExecutionMetadata {
 
-  private lazy val userJwtToken: String =
+  // Fallback token from the environment, used when the execution did not carry a per-request token
+  // (e.g. a CU pod minted a static token at creation). Per-execution request tokens take precedence.
+  private lazy val envToken: String =
     sys.env.getOrElse(EnvironmentalVariable.ENV_USER_JWT_TOKEN, "").trim
 
   private lazy val baseEndpoint: String =
@@ -49,12 +52,32 @@ object RemoteExecutionMetadata {
   /** Remote routing is active only when this process has no database connection of its own. */
   def enabled: Boolean = !org.apache.texera.dao.SqlServer.isInitialized
 
+  // The JWT supplied by the user that issued each execution, keyed by execution id. Populated at
+  // execution creation so that the metadata calls made later in the run (which only know the eid)
+  // authenticate as the issuing user rather than as a static token embedded in the computing unit.
+  private val executionTokens: TrieMap[Long, String] = TrieMap.empty
+
+  /** Remember the issuing user's token for an execution; ignored when blank. */
+  def registerExecutionToken(eid: Long, token: Option[String]): Unit =
+    token.map(_.trim).filter(_.nonEmpty).foreach(executionTokens.put(eid, _))
+
+  /** Forget an execution's token (call when the execution is cleaned up). */
+  def clearExecutionToken(eid: Long): Unit = executionTokens.remove(eid)
+
+  /** The issuing user's token for an execution, falling back to the environment token. */
+  private[service] def tokenFor(eid: Long): String = executionTokens.getOrElse(eid, envToken)
+
+  /** Resolve an explicitly-supplied per-request token, falling back to the environment token. */
+  private[service] def resolve(token: Option[String]): String =
+    token.map(_.trim).filter(_.nonEmpty).getOrElse(envToken)
+
   def createExecution(
       workflowId: Long,
       uid: Option[Integer],
       executionName: String,
       environmentVersion: String,
-      computingUnitId: Integer
+      computingUnitId: Integer,
+      userJwtToken: Option[String] = None
   ): ExecutionIdentity = {
     val body = objectMapper.createObjectNode()
     body.put("workflowId", workflowId)
@@ -65,32 +88,35 @@ object RemoteExecutionMetadata {
     body.put("executionName", executionName)
     body.put("environmentVersion", environmentVersion)
     body.put("computingUnitId", computingUnitId.intValue())
-    val response = request("POST", "/create", Some(body.toString))
+    val response = request(resolve(userJwtToken), "POST", "/create", Some(body.toString))
       .getOrElse(
         throw new RuntimeException("dashboard service returned no body for execution create")
       )
-    ExecutionIdentity(objectMapper.readTree(response).get("eid").asLong())
+    val eid = objectMapper.readTree(response).get("eid").asLong()
+    // Remember the issuing user's token so later eid-keyed metadata calls authenticate as them.
+    registerExecutionToken(eid, userJwtToken)
+    ExecutionIdentity(eid)
   }
 
   def updateRuntimeStatsUri(wid: Long, eid: Long, uri: URI): Unit = {
     val body = objectMapper.createObjectNode()
     body.put("workflowId", wid)
     body.put("uri", uri.toString)
-    request("PUT", s"/$eid/runtime-stats-uri", Some(body.toString))
+    request(tokenFor(eid), "PUT", s"/$eid/runtime-stats-uri", Some(body.toString))
   }
 
   def insertOperatorConsoleUri(eid: Long, operatorId: String, uri: URI): Unit = {
     val body = objectMapper.createObjectNode()
     body.put("operatorId", operatorId)
     body.put("uri", uri.toString)
-    request("POST", s"/$eid/operator-console", Some(body.toString))
+    request(tokenFor(eid), "POST", s"/$eid/operator-console", Some(body.toString))
   }
 
   def insertPortResultUri(eid: Long, globalPortIdSerialized: String, uri: URI): Unit = {
     val body = objectMapper.createObjectNode()
     body.put("globalPortId", globalPortIdSerialized)
     body.put("uri", uri.toString)
-    request("POST", s"/$eid/port-result", Some(body.toString))
+    request(tokenFor(eid), "POST", s"/$eid/port-result", Some(body.toString))
   }
 
   def getResultUri(
@@ -101,20 +127,29 @@ object RemoteExecutionMetadata {
   ): Option[URI] = {
     val path =
       s"/$eid/port-result?opId=${enc(opId)}&portId=$portIdId&internal=$portIdInternal"
-    request("GET", path, None)
+    request(tokenFor(eid), "GET", path, None)
       .map(response => new URI(objectMapper.readTree(response).get("uri").asText()))
   }
 
-  def getLatestExecutionId(wid: Integer, cuid: Integer): Option[Integer] = {
-    request("GET", s"/latest?wid=$wid&cuid=$cuid", None)
+  def getLatestExecutionId(
+      wid: Integer,
+      cuid: Integer,
+      userJwtToken: Option[String] = None
+  ): Option[Integer] = {
+    request(resolve(userJwtToken), "GET", s"/latest?wid=$wid&cuid=$cuid", None)
       .map(response => Integer.valueOf(objectMapper.readTree(response).get("eid").asInt()))
   }
 
   private def enc(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8.name())
 
-  private def request(method: String, path: String, body: Option[String]): Option[String] =
-    request(baseEndpoint, userJwtToken, method, path, body)
+  private def request(
+      token: String,
+      method: String,
+      path: String,
+      body: Option[String]
+  ): Option[String] =
+    request(baseEndpoint, token, method, path, body)
 
   /** Endpoint/token are injectable so the HTTP round-trip can be unit-tested in isolation. */
   private[service] def request(

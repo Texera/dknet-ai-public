@@ -43,5 +43,8 @@ case class WorkflowExecuteRequest(
     replayFromExecution: Option[ReplayExecutionInfo], // contains execution Id, interaction Id.
     workflowSettings: WorkflowSettings,
     emailNotificationEnabled: Boolean,
-    computingUnitId: Int
+    computingUnitId: Int,
+    // JWT of the issuing user. The CU forwards it on its outbound calls (execution metadata,
+    // dataset access) instead of relying on a static token embedded in the unit.
+    userJwtToken: Option[String] = None
 ) extends TexeraWebSocketRequest
