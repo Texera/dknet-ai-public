@@ -17,13 +17,9 @@
  * under the License.
  */
 
-import { Component, HostBinding } from "@angular/core";
+import { Component } from "@angular/core";
 import { GuiConfigService } from "./common/service/gui-config.service";
-import { NavigationEnd, Router } from "@angular/router";
-import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
-import { filter } from "rxjs";
 
-@UntilDestroy()
 @Component({
   selector: "texera-root",
   template: `
@@ -36,27 +32,13 @@ import { filter } from "rxjs";
       <button (click)="retry()">Retry</button>
     </div>
     <router-outlet *ngIf="configLoaded"></router-outlet>
-    <texera-agent-panel
-      *ngIf="shouldShowAgentPanel"
-      [panelMode]="agentPanelMode"
-      (panelWidthChange)="onAgentPanelWidthChange($event)"></texera-agent-panel>
   `,
   standalone: false,
 })
 export class AppComponent {
   configLoaded = false;
-  agentPanelReservedWidth = 0;
-  private currentUrl = "";
 
-  @HostBinding("style.--agent-panel-space")
-  get agentPanelSpace(): string {
-    return `${this.agentPanelReservedWidth}px`;
-  }
-
-  constructor(
-    private config: GuiConfigService,
-    private router: Router
-  ) {
+  constructor(private config: GuiConfigService) {
     // determine whether configuration was successfully loaded by APP_INITIALIZER
     try {
       // accessing env will throw if not loaded
@@ -65,58 +47,9 @@ export class AppComponent {
     } catch {
       this.configLoaded = false;
     }
-
-    this.updateCurrentUrl(this.router.url);
-    this.router.events
-      .pipe(
-        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-        untilDestroyed(this)
-      )
-      .subscribe(event => {
-        this.updateCurrentUrl(event.urlAfterRedirects);
-      });
   }
 
   retry(): void {
     window.location.reload();
-  }
-
-  get copilotEnabled(): boolean {
-    return this.config.env.copilotEnabled;
-  }
-
-  get shouldShowAgentPanel(): boolean {
-    return this.configLoaded && this.copilotEnabled && !this.isAboutPage(this.currentUrl);
-  }
-
-  get agentPanelMode(): "dock" | "float" {
-    return this.isWorkspacePage(this.currentUrl) ? "float" : "dock";
-  }
-
-  onAgentPanelWidthChange(width: number): void {
-    this.agentPanelReservedWidth = this.shouldShowAgentPanel && this.agentPanelMode === "dock" ? width : 0;
-    this.dispatchResizeAfterLayoutChange();
-  }
-
-  private updateCurrentUrl(url: string): void {
-    this.currentUrl = url;
-    if (!this.shouldShowAgentPanel || this.agentPanelMode === "float") {
-      this.agentPanelReservedWidth = 0;
-      this.dispatchResizeAfterLayoutChange();
-    }
-  }
-
-  private isAboutPage(url: string): boolean {
-    return url === "/" || url.startsWith("/?") || url.startsWith("/dashboard/about");
-  }
-
-  private isWorkspacePage(url: string): boolean {
-    return /^\/dashboard\/user\/workflow\/\d+(?:[/?#]|$)/.test(url);
-  }
-
-  private dispatchResizeAfterLayoutChange(): void {
-    const resizeEvent = new Event("resize");
-    window.dispatchEvent(resizeEvent);
-    setTimeout(() => window.dispatchEvent(resizeEvent), 175);
   }
 }

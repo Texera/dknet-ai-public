@@ -53,6 +53,7 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import { NzIconDirective } from "ng-zorro-antd/icon";
 import { SearchBarComponent } from "./user/search-bar/search-bar.component";
 import { UserIconComponent } from "./user/user-icon/user-icon.component";
+import { AgentDockComponent } from "../../workspace/component/agent/agent-dock/agent-dock.component";
 
 @Component({
   selector: "texera-dashboard",
@@ -75,6 +76,7 @@ import { UserIconComponent } from "./user/user-icon/user-icon.component";
     GoogleSigninButtonModule,
     NzContentComponent,
     RouterOutlet,
+    AgentDockComponent,
   ],
 })
 @UntilDestroy()
@@ -86,6 +88,9 @@ export class DashboardComponent implements OnInit {
   public gitCommitHash: string = Version.raw;
   displayForum: boolean = true;
   displayNavbar: boolean = true;
+  // The docked agent panel shows on dashboard pages only (not the workspace, which
+  // has its own floating panel, and not the About hero), and only when enabled.
+  showAgentDock: boolean = false;
   isCollapsed: boolean = false;
   showLinks: boolean = false;
   logo: string = "";
@@ -175,6 +180,10 @@ export class DashboardComponent implements OnInit {
     this.loadLogos();
 
     this.loadTabs();
+
+    // Compute initial chrome state in case the first navigation fired before the
+    // router-events subscription above was attached.
+    this.checkRoute();
   }
 
   loadLogos(): void {
@@ -237,6 +246,19 @@ export class DashboardComponent implements OnInit {
   checkRoute() {
     const currentRoute = this.router.url;
     this.displayNavbar = this.isNavbarEnabled(currentRoute);
+    this.showAgentDock = this.copilotEnabled && !this.isWorkspacePage(currentRoute) && !this.isAboutPage(currentRoute);
+  }
+
+  private get copilotEnabled(): boolean {
+    try {
+      return this.config.env.copilotEnabled;
+    } catch {
+      return false;
+    }
+  }
+
+  private isWorkspacePage(url: string): boolean {
+    return /\/dashboard\/user\/workflow\/\d+/.test(url);
   }
 
   isNavbarEnabled(currentRoute: string) {
