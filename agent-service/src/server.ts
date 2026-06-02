@@ -126,14 +126,25 @@ async function createAgentInstance(
 
   await agent.initialize();
 
-  if (delegateConfig?.workflowId && delegateConfig.userToken) {
-    try {
-      const workflow = await retrieveWorkflow(delegateConfig.userToken, delegateConfig.workflowId);
-      delegateConfig.workflowName = workflow.name;
+  if (delegateConfig?.userToken) {
+    let shouldSetDelegateConfig = delegateConfig.workflowId === undefined;
 
-      const workflowState = agent.getWorkflowState();
-      workflowState.setWorkflowContent(workflow.content);
+    if (delegateConfig.workflowId !== undefined) {
+      try {
+        const workflow = await retrieveWorkflow(delegateConfig.userToken, delegateConfig.workflowId);
+        delegateConfig.workflowName = workflow.name;
 
+        const workflowState = agent.getWorkflowState();
+        workflowState.setWorkflowContent(workflow.content);
+        shouldSetDelegateConfig = true;
+
+        log.info({ agentId, workflowId: delegateConfig.workflowId }, "loaded workflow for agent");
+      } catch (error) {
+        log.warn({ agentId, workflowId: delegateConfig.workflowId, err: error }, "failed to load workflow");
+      }
+    }
+
+    if (shouldSetDelegateConfig) {
       agent.setDelegateConfig({
         userToken: delegateConfig.userToken,
         userInfo: delegateConfig.userInfo,
@@ -141,10 +152,6 @@ async function createAgentInstance(
         workflowName: delegateConfig.workflowName,
         computingUnitId: delegateConfig.computingUnitId,
       });
-
-      log.info({ agentId, workflowId: delegateConfig.workflowId }, "loaded workflow for agent");
-    } catch (error) {
-      log.warn({ agentId, workflowId: delegateConfig.workflowId, err: error }, "failed to load workflow");
     }
   }
 

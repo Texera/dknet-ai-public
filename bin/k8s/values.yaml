@@ -219,6 +219,22 @@ agentService:
     # Authenticates the agent service to the in-cluster LLM gateway
     # (access-control-service / LiteLLM), not to the upstream provider.
     llmApiKey: "dummy"
+    mcpRequestTimeoutMs: 30000
+
+bioMcpService:
+  enabled: true
+  name: bio-mcp-service
+  numOfPods: 1
+  imageName: texera-bio-mcp-service
+  service:
+    type: ClusterIP
+    port: 3010
+  env:
+    apiKey: ""
+    omimApiKey: ""
+    enablePlaceholderTools: false
+    enableOmimPlaceholder: false
+    enableBlastPlaceholder: false
 
 litellm:
   enabled: true

@@ -198,7 +198,7 @@ export interface AgentSnapshot {
   settings: SerializedAgentSettings;
   delegate?: {
     userInfo?: UserInfo;
-    workflowId: number;
+    workflowId?: number;
     workflowName?: string;
     computingUnitId?: number;
   };

@@ -61,6 +61,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-agent-service-secret
                   key: llm-api-key
+            {{- if .Values.bioMcpService.enabled }}
+            - name: MCP_SERVERS
+              value: '[{"name":"biomcp","url":"http://{{ .Values.bioMcpService.name }}-svc:{{ .Values.bioMcpService.service.port }}/mcp","toolPrefix":"biomcp","apiKeyEnv":"BIOMCP_API_KEY"}]'
+            - name: MCP_REQUEST_TIMEOUT_MS
+              value: "{{ .Values.agentService.env.mcpRequestTimeoutMs }}"
+            - name: BIOMCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-bio-mcp-service-secret
+                  key: biomcp-api-key
+            {{- end }}
           # The service loads operator metadata from the dashboard service on
           # startup, so gate readiness on its health endpoint before the gateway
           # routes traffic here. /api/healthcheck needs no auth.

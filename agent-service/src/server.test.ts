@@ -62,6 +62,12 @@ async function del(path: string): Promise<Response> {
   return app.handle(new Request(url(path), { method: "DELETE" }));
 }
 
+function unsignedJwt(payload: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${header}.${body}.signature`;
+}
+
 async function readJson<T = unknown>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
@@ -123,6 +129,34 @@ describe(`POST ${API}/agents`, () => {
     // Body schema violation; the exact status depends on the Elysia version but
     // it is always a 4xx or 5xx, never a successful 2xx.
     expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  test("token-only delegated agents expose dataset tools", async () => {
+    const token = unsignedJwt({
+      userId: 1,
+      sub: "alice",
+      email: "alice@example.com",
+      role: "REGULAR",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const createRes = await postJson(`${API}/agents`, { modelType: "m", userToken: token });
+    expect(createRes.status).toBe(200);
+    const created = await readJson<{
+      id: string;
+      delegate?: { userToken: string; workflowId?: number };
+    }>(createRes);
+    expect(created.delegate?.userToken).toBe("***");
+    expect(created.delegate?.workflowId).toBeUndefined();
+
+    const systemInfo = await readJson<{
+      tools: Array<{ name: string }>;
+    }>(await getJson(`${API}/agents/${created.id}/system-info`));
+    const toolNames = systemInfo.tools.map(tool => tool.name);
+    expect(toolNames).toContain("listDatasets");
+    expect(toolNames).toContain("listDatasetVersions");
+    expect(toolNames).toContain("listDatasetFiles");
+    expect(toolNames).not.toContain("executeOperator");
   });
 });
 

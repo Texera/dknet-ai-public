@@ -47,6 +47,17 @@ import {
   TOOL_NAME_EXECUTE_OPERATOR,
   type ExecutionConfig,
 } from "./tools/workflow-execution-tools";
+import {
+  createListDatasetFilesTool,
+  createListDatasetsTool,
+  createListDatasetVersionsTool,
+  TOOL_NAME_LIST_DATASET_FILES,
+  TOOL_NAME_LIST_DATASET_VERSIONS,
+  TOOL_NAME_LIST_DATASETS,
+  type DatasetToolConfig,
+} from "./tools/dataset-tools";
+import { RemoteMcpToolRegistry } from "./mcp/mcp-client-manager";
+import { createRemoteMcpTools } from "./tools/mcp-remote-tools";
 import { assembleContext } from "./util/context-utils";
 import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/compile-api";
 import { createLogger } from "../logger";
@@ -92,6 +103,7 @@ export class TexeraAgent {
   private state: AgentStateEnum = AgentStateEnum.AVAILABLE;
   private workflowState: WorkflowState;
   private metadataStore: WorkflowSystemMetadata;
+  private mcpToolRegistry: RemoteMcpToolRegistry;
   private head: string = INITIAL_STEP_ID;
   private stepsById: Map<string, ReActStep> = new Map();
   private stepCounter = 0;
@@ -110,7 +122,7 @@ export class TexeraAgent {
   private delegateConfig?: {
     userToken: string;
     userInfo?: UserInfo;
-    workflowId: number;
+    workflowId?: number;
     workflowName?: string;
     computingUnitId?: number;
   };
@@ -138,6 +150,7 @@ export class TexeraAgent {
 
     this.workflowState = new WorkflowState();
     this.metadataStore = WorkflowSystemMetadata.getInstance();
+    this.mcpToolRegistry = RemoteMcpToolRegistry.getInstance();
     this.workflowResultState = new WorkflowResultState(() => this.getAncestorPath());
 
     const initialStep: ReActStep = {
@@ -166,11 +179,18 @@ export class TexeraAgent {
       if (!this.metadataStore.isInitialized()) {
         await this.metadataStore.initializeFromBackend();
       }
+      await this.mcpToolRegistry.initialize();
 
       this.rebuildSystemPrompt();
 
       this.tools = this.createTools();
-      this.log.info({ operatorCount: this.metadataStore.getOperatorCount() }, "agent initialized");
+      this.log.info(
+        {
+          operatorCount: this.metadataStore.getOperatorCount(),
+          remoteMcpToolCount: this.mcpToolRegistry.getTools().length,
+        },
+        "agent initialized"
+      );
     } catch (error) {
       this.log.error({ err: error }, "failed to initialize metadata");
     }
@@ -182,7 +202,7 @@ export class TexeraAgent {
   }
 
   private buildExecutionConfig(): ExecutionConfig | undefined {
-    if (!this.delegateConfig) return undefined;
+    if (!this.delegateConfig || this.delegateConfig.workflowId === undefined) return undefined;
     return {
       userToken: this.delegateConfig.userToken,
       workflowId: this.delegateConfig.workflowId,
@@ -190,6 +210,13 @@ export class TexeraAgent {
       maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
       maxOperatorResultCellCharLimit: this.settings.maxOperatorResultCellCharLimit,
       executionTimeoutMs: this.settings.executionTimeoutMs,
+    };
+  }
+
+  private buildDatasetToolConfig(): DatasetToolConfig | undefined {
+    if (!this.delegateConfig) return undefined;
+    return {
+      userToken: this.delegateConfig.userToken,
     };
   }
 
@@ -203,7 +230,9 @@ export class TexeraAgent {
       }
     }
 
-    const getExecutionConfig = this.delegateConfig ? () => this.buildExecutionConfig()! : undefined;
+    const getExecutionConfig =
+      this.delegateConfig?.workflowId !== undefined ? () => this.buildExecutionConfig()! : undefined;
+    const getDatasetToolConfig = this.delegateConfig ? () => this.buildDatasetToolConfig()! : undefined;
 
     const context: ToolContext = {
       metadataStore: this.metadataStore,
@@ -229,6 +258,14 @@ export class TexeraAgent {
         }
       );
     }
+
+    if (getDatasetToolConfig) {
+      tools[TOOL_NAME_LIST_DATASETS] = createListDatasetsTool(getDatasetToolConfig);
+      tools[TOOL_NAME_LIST_DATASET_VERSIONS] = createListDatasetVersionsTool(getDatasetToolConfig);
+      tools[TOOL_NAME_LIST_DATASET_FILES] = createListDatasetFilesTool(getDatasetToolConfig);
+    }
+
+    Object.assign(tools, createRemoteMcpTools(this.mcpToolRegistry));
 
     return tools;
   }
@@ -417,7 +454,7 @@ export class TexeraAgent {
       return;
     }
 
-    if (!this.delegateConfig?.workflowId || !this.delegateConfig?.userToken) {
+    if (this.delegateConfig?.workflowId === undefined || !this.delegateConfig?.userToken) {
       return;
     }
 
@@ -434,7 +471,7 @@ export class TexeraAgent {
   setDelegateConfig(config: {
     userToken: string;
     userInfo?: UserInfo;
-    workflowId: number;
+    workflowId?: number;
     workflowName?: string;
     computingUnitId?: number;
   }): void {
@@ -446,7 +483,7 @@ export class TexeraAgent {
   }
 
   getDelegateConfig():
-    | { userToken: string; userInfo?: UserInfo; workflowId: number; workflowName?: string; computingUnitId?: number }
+    | { userToken: string; userInfo?: UserInfo; workflowId?: number; workflowName?: string; computingUnitId?: number }
     | undefined {
     return this.delegateConfig;
   }
@@ -458,23 +495,18 @@ export class TexeraAgent {
 
     const subscription = new Subscription();
     const workflowChanged$ = this.workflowState.getWorkflowChangedStream();
+    const delegateConfig = this.delegateConfig;
+    const workflowId = delegateConfig?.workflowId;
+    const userToken = delegateConfig?.userToken;
+    const workflowName = delegateConfig?.workflowName;
 
-    if (this.delegateConfig?.workflowId && this.delegateConfig.userToken) {
+    if (workflowId !== undefined && userToken) {
       const persistSubscription = workflowChanged$.pipe(debounceTime(PERSIST_DEBOUNCE_MS)).subscribe(async () => {
-        if (!this.delegateConfig?.workflowId || !this.delegateConfig.userToken) {
-          return;
-        }
-
         try {
           const { persistWorkflow } = await import("../api/workflow-api");
           const workflowContent = this.workflowState.getWorkflowContent();
-          await persistWorkflow(
-            this.delegateConfig.userToken,
-            this.delegateConfig.workflowId,
-            this.delegateConfig.workflowName || "Agent Workflow",
-            workflowContent
-          );
-          this.log.debug({ workflowId: this.delegateConfig.workflowId }, "auto-persisted workflow");
+          await persistWorkflow(userToken, workflowId, workflowName || "Agent Workflow", workflowContent);
+          this.log.debug({ workflowId }, "auto-persisted workflow");
         } catch (error) {
           this.log.error({ err: error }, "failed to auto-persist workflow");
         }
