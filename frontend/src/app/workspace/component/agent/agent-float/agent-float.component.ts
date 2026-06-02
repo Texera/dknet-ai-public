@@ -27,13 +27,14 @@ import { NzIconDirective } from "ng-zorro-antd/icon";
 import { GuiConfigService } from "../../../../common/service/gui-config.service";
 import { AgentWorkbenchComponent } from "../agent-workbench/agent-workbench.component";
 
-type ResizeAxis = "x" | "y" | "xy";
+type ResizeHandle = "left" | "bottom" | "bottom-left";
 
 /**
  * The floating agent panel for the workflow workspace. It is anchored to the
- * bottom-right corner, moved with cdkDrag (via the title bar), and resized on the
- * left / top / top-left edges with a plain drag splitter — so it grows into open
- * space toward the top-left without any anchor compensation.
+ * top-right corner, moved with cdkDrag (via the title bar), and resized on the
+ * left / bottom / bottom-left edges with a plain drag splitter — so it grows down
+ * and to the left into open space, keeping the top-right (and the header) fixed,
+ * with no anchor compensation.
  */
 @Component({
   selector: "texera-agent-float",
@@ -53,8 +54,10 @@ type ResizeAxis = "x" | "y" | "xy";
 export class AgentFloatComponent implements OnInit, OnDestroy {
   private static readonly WIDTH_KEY = "agent-panel-float-width";
   private static readonly HEIGHT_KEY = "agent-panel-float-height";
-  private static readonly DRAG_X_KEY = "agent-panel-float-drag-x";
-  private static readonly DRAG_Y_KEY = "agent-panel-float-drag-y";
+  // Position keys are versioned because the anchor changed from bottom-right to
+  // top-right; old drag offsets would mis-place the panel.
+  private static readonly DRAG_X_KEY = "agent-panel-float-pos-x";
+  private static readonly DRAG_Y_KEY = "agent-panel-float-pos-y";
   private static readonly MIN_WIDTH = 320;
   private static readonly MIN_HEIGHT = 450;
   private static readonly MAX_WIDTH_RATIO = 0.9;
@@ -120,22 +123,25 @@ export class AgentFloatComponent implements OnInit, OnDestroy {
     this.persist();
   }
 
-  /** Begin a resize from the left / top / top-left edge. */
-  startResize(event: MouseEvent, axis: ResizeAxis): void {
+  /** Begin a resize from the left / bottom / bottom-left edge. */
+  startResize(event: MouseEvent, handle: ResizeHandle): void {
     event.preventDefault();
     event.stopPropagation(); // keep cdkDrag from also reacting
     const startX = event.clientX;
     const startY = event.clientY;
     const startWidth = this.width;
     const startHeight = this.height;
+    const resizesWidth = handle === "left" || handle === "bottom-left";
+    const resizesHeight = handle === "bottom" || handle === "bottom-left";
 
     const onMove = (e: MouseEvent): void => {
-      // Anchored bottom-right: dragging left widens, dragging up heightens.
-      if (axis !== "y") {
+      // Anchored top-right: dragging left widens, dragging down heightens. The
+      // top-right corner stays put, so no drag-position compensation is needed.
+      if (resizesWidth) {
         this.width = this.clampWidth(startWidth + (startX - e.clientX));
       }
-      if (axis !== "x") {
-        this.height = this.clampHeight(startHeight + (startY - e.clientY));
+      if (resizesHeight) {
+        this.height = this.clampHeight(startHeight + (e.clientY - startY));
       }
     };
     const onUp = (): void => {

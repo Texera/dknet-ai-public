@@ -64,33 +64,34 @@ describe("AgentFloatComponent", () => {
     expect(component.width).toBe(0);
   });
 
-  it("widens when dragging the left edge (x axis only)", () => {
+  it("widens when dragging the left edge, without moving the panel", () => {
     component.togglePanel();
-    component.startResize(mousedown(1000, 500), "x");
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 900, clientY: 500 }));
+    component.startResize(mousedown(1000, 500), "left");
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 900, clientY: 500 })); // drag left 100px
     expect(component.width).toBe(DEFAULT_WIDTH + 100);
     expect(component.height).toBe(DEFAULT_HEIGHT);
+    expect(component.dragPosition).toEqual({ x: 0, y: 0 });
     document.dispatchEvent(new MouseEvent("mouseup"));
   });
 
-  it("heightens when dragging the top edge (y axis only)", () => {
+  it("heightens when dragging the bottom edge down", () => {
     component.togglePanel();
-    component.startResize(mousedown(500, 1000), "y");
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 500, clientY: 900 }));
+    component.startResize(mousedown(500, 500), "bottom");
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 500, clientY: 600 })); // drag down 100px
     expect(component.height).toBe(DEFAULT_HEIGHT + 100);
     expect(component.width).toBe(DEFAULT_WIDTH);
     document.dispatchEvent(new MouseEvent("mouseup"));
   });
 
-  it("resizes both axes from the corner and stops after mouseup", () => {
+  it("resizes both axes from the bottom-left corner and stops after mouseup", () => {
     component.togglePanel();
-    component.startResize(mousedown(1000, 1000), "xy");
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 950, clientY: 940 }));
+    component.startResize(mousedown(1000, 500), "bottom-left");
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 950, clientY: 560 })); // left 50, down 60
     expect(component.width).toBe(DEFAULT_WIDTH + 50);
     expect(component.height).toBe(DEFAULT_HEIGHT + 60);
 
     document.dispatchEvent(new MouseEvent("mouseup"));
-    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 100, clientY: 100 }));
+    document.dispatchEvent(new MouseEvent("mousemove", { clientX: 100, clientY: 700 }));
     expect(component.width).toBe(DEFAULT_WIDTH + 50);
     expect(component.height).toBe(DEFAULT_HEIGHT + 60);
   });

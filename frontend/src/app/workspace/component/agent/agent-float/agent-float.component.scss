@@ -31,7 +31,7 @@
 .float-panel {
   position: fixed;
   right: 16px;
-  bottom: 84px;
+  top: 72px;
   z-index: 1001;
   background: white;
   border: 1px solid #d9d9d9;
@@ -42,9 +42,9 @@
   overflow: hidden;
 }
 
-// Resize handles sit above the header (which is the drag handle) so the top edge
-// resizes vertically instead of starting a drag. Each shows a visible grip so the
-// resize zones are discoverable, and the decorative grip is click-through.
+// The panel is anchored top-right, so the header (drag handle) lives on the fixed
+// top edge and the resize handles live on the left / bottom / bottom-left edges —
+// no overlap with the header. Each handle shows a visible, click-through grip.
 .float-resizer {
   position: absolute;
   background: transparent;
@@ -79,15 +79,15 @@
     }
   }
 
-  &.float-resizer-top {
-    top: 0;
+  &.float-resizer-bottom {
+    bottom: 0;
     left: 0;
     right: 0;
     height: 10px;
     cursor: ns-resize;
 
     &::after {
-      top: 3px;
+      bottom: 3px;
       left: 50%;
       width: 48px;
       height: 3px;
@@ -95,28 +95,28 @@
     }
   }
 
-  &.float-resizer-corner {
-    top: 0;
+  &.float-resizer-corner-bl {
+    bottom: 0;
     left: 0;
     width: 20px;
     height: 20px;
-    cursor: nwse-resize;
+    cursor: nesw-resize;
     z-index: 7;
 
     &::after {
-      top: 4px;
+      bottom: 4px;
       left: 4px;
       width: 7px;
       height: 7px;
       background: transparent;
-      border-top: 2px solid rgba(0, 0, 0, 0.25);
+      border-bottom: 2px solid rgba(0, 0, 0, 0.25);
       border-left: 2px solid rgba(0, 0, 0, 0.25);
       border-radius: 0;
     }
 
     &:hover::after {
       background: transparent;
-      border-top-color: #1890ff;
+      border-bottom-color: #1890ff;
       border-left-color: #1890ff;
     }
   }
@@ -138,7 +138,4 @@
 .float-minimize {
   padding: 0 6px !important;
   cursor: pointer;
-  // Keep the collapse button clickable even though the top resize strip overlaps it.
-  position: relative;
-  z-index: 8;
 }

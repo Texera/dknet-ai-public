@@ -44,16 +44,16 @@
     (cdkDragEnded)="onDragEnded($event)"
     [style.width.px]="width"
     [style.height.px]="height">
-    <!-- Resize handles (panel is anchored bottom-right, grows toward top-left) -->
+    <!-- Resize handles (panel is anchored top-right, grows toward bottom-left) -->
     <div
       class="float-resizer float-resizer-left"
-      (mousedown)="startResize($event, 'x')"></div>
+      (mousedown)="startResize($event, 'left')"></div>
     <div
-      class="float-resizer float-resizer-top"
-      (mousedown)="startResize($event, 'y')"></div>
+      class="float-resizer float-resizer-bottom"
+      (mousedown)="startResize($event, 'bottom')"></div>
     <div
-      class="float-resizer float-resizer-corner"
-      (mousedown)="startResize($event, 'xy')"></div>
+      class="float-resizer float-resizer-corner-bl"
+      (mousedown)="startResize($event, 'bottom-left')"></div>
 
     <div class="float-header" cdkDragHandle>
       <span class="float-title">AI Agents</span>
