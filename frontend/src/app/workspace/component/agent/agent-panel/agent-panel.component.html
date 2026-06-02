@@ -36,7 +36,6 @@
 
 <div
   cdkDrag
-  cdkDragBoundary="texera-workspace"
   id="agent-container"
   class="box"
   nz-resizable
@@ -99,23 +98,12 @@
       <nz-tab
         *ngFor="let agent of agents; let i = index"
         [nzTitle]="agentTabTitle"
-        [nzForceRender]="true"
-        [nzDisabled]="!canSwitchToAgent(agent)">
+        [nzForceRender]="true">
         <ng-template
           #agentTabTitle
           let-active="active">
-          <div
-            class="agent-tab-title"
-            [class.workflow-mismatch]="!canSwitchToAgent(agent)">
+          <div class="agent-tab-title">
             <span class="agent-tab-name">{{ agent.name }}</span>
-            <i
-              *ngIf="!canSwitchToAgent(agent)"
-              nz-icon
-              nzType="lock"
-              nzTheme="outline"
-              class="workflow-lock-icon"
-              nz-tooltip
-              nzTooltipTitle="This agent is working on a different workflow"></i>
             <button
               nz-button
               nzType="text"

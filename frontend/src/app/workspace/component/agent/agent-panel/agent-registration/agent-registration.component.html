@@ -19,7 +19,7 @@
 
 <div class="agent-registration-container">
   <div class="registration-header">
-    <h3>Welcome to Texera Agent!</h3>
+    <h3>Welcome to DKNet AI.</h3>
     <p>Select a model type and create an AI agent to assist with your data science tasks</p>
   </div>
 
@@ -83,28 +83,19 @@
   </div>
 
   <div class="action-buttons">
-    <nz-alert
-      *ngIf="!computingUnitConnected"
-      nzType="warning"
-      nzMessage="Please connect to a computing unit before creating an agent."
-      nzShowIcon
-      style="margin-bottom: 12px">
-    </nz-alert>
     <button
       nz-button
       nzType="primary"
       nzSize="large"
       [nzLoading]="isCreating"
       [disabled]="!canCreate()"
-      nz-tooltip
-      [nzTooltipTitle]="!computingUnitConnected ? 'Connect to a computing unit first' : ''"
       (click)="createAgent()">
       <i
         *ngIf="!isCreating"
         nz-icon
         nzType="plus-circle"
         nzTheme="outline"></i>
-      {{ isCreating ? 'Creating...' : 'Create Agent' }}
+      {{ isCreating ? 'Creating...' : 'Create a DKNet Agent' }}
     </button>
   </div>
 </div>

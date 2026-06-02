@@ -115,12 +115,25 @@ export interface UserInfo {
   role: string;
 }
 
-export interface AgentDelegateConfig {
+export interface AgentTaskContext {
   userToken: string;
   userInfo?: UserInfo;
   workflowId?: number;
   workflowName?: string;
   computingUnitId?: number;
+}
+
+export interface AgentToolInfo {
+  name: string;
+  description: string;
+  inputSchema: any;
+  enabled: boolean;
+}
+
+export interface AgentPersistedConfig {
+  systemPrompt: string;
+  tools: AgentToolInfo[];
+  settings: AgentSettingsApi;
 }
 
 export interface AgentSettingsApi {
@@ -140,26 +153,9 @@ export interface AgentInfo {
   modelType: string;
   state: AgentState;
   createdAt: Date;
-  delegate?: AgentDelegateConfig;
-  settings?: AgentSettingsApi;
 }
 
 export interface CreateAgentRequest {
   modelType: string;
   name?: string;
-  userToken?: string;
-  workflowId?: number;
-  computingUnitId?: number;
-  settings?: AgentSettingsApi;
-}
-
-export interface UpdateAgentSettingsRequest {
-  maxOperatorResultCharLimit?: number;
-  maxOperatorResultCellCharLimit?: number;
-  operatorResultSerializationMode?: "tsv";
-  toolTimeoutSeconds?: number;
-  executionTimeoutMinutes?: number;
-  disabledTools?: string[];
-  maxSteps?: number;
-  allowedOperatorTypes?: string[];
 }

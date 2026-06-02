@@ -33,36 +33,16 @@ import {
   interval,
   switchMap,
   takeUntil,
+  distinctUntilChanged,
 } from "rxjs";
 import { NotificationService } from "../../../common/service/notification/notification.service";
 import { WorkflowPersistService } from "../../../common/service/workflow-persist/workflow-persist.service";
 import { AppSettings } from "../../../common/app-setting";
 import { AuthService } from "../../../common/service/user/auth.service";
+import { UserService } from "../../../common/service/user/user.service";
 import { AgentState, ReActStep, ModelMessage } from "./agent-types";
 import { Workflow, WorkflowContent } from "../../../common/type/workflow";
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
-
-/**
- * Agent settings for API (serializable format).
- */
-export interface AgentSettingsApi {
-  /** Maximum character limit for operator results (uses symmetric truncation) */
-  maxOperatorResultCharLimit?: number;
-  /** Maximum character limit per cell (truncates individual cell values beyond this limit) */
-  maxOperatorResultCellCharLimit?: number;
-  /** Serialization mode for operator results */
-  operatorResultSerializationMode?: "tsv";
-  /** Tool execution timeout in seconds */
-  toolTimeoutSeconds?: number;
-  /** Workflow execution timeout in minutes */
-  executionTimeoutMinutes?: number;
-  /** List of disabled tool names */
-  disabledTools?: string[];
-  /** Maximum number of steps per message */
-  maxSteps?: number;
-  /** List of allowed operator types (empty = all operators allowed) */
-  allowedOperatorTypes?: string[];
-}
 
 /**
  * Agent information for tracking created agents (API version).
@@ -80,8 +60,6 @@ export interface AgentInfo {
     workflowId?: number;
     workflowName?: string;
   };
-  /** Current agent settings */
-  settings?: AgentSettingsApi;
 }
 
 /**
@@ -126,7 +104,6 @@ interface ApiAgentInfo {
     workflowId?: number;
     workflowName?: string;
   };
-  settings?: AgentSettingsApi;
 }
 
 interface ApiAgentListResponse {
@@ -184,6 +161,12 @@ interface AgentStateTracking {
   isActive: boolean;
 }
 
+interface AgentRequestContext {
+  userToken: string;
+  workflowId?: number;
+  computingUnitId?: number;
+}
+
 /**
  * Manages the workspace's agents via the agent-service HTTP/WebSocket
  * API. Owns the local agent list, per-agent state tracking (ReAct steps, HEAD
@@ -227,26 +210,97 @@ export class AgentService {
     private notificationService: NotificationService,
     private workflowPersistService: WorkflowPersistService,
     private ngZone: NgZone,
-    private computingUnitStatusService: ComputingUnitStatusService
+    private computingUnitStatusService: ComputingUnitStatusService,
+    private userService: UserService
   ) {
-    // Sync local cache with backend on service initialization
-    // This handles cases where the backend was restarted
-    this.syncAgentsWithBackend();
+    // Agent visibility is scoped by the current user's JWT. Any user change
+    // invalidates the local cache and active WebSocket connections.
+    this.userService
+      .userChanged()
+      .pipe(distinctUntilChanged((previous, current) => previous?.uid === current?.uid))
+      .subscribe(user => {
+        this.clearAgentCache();
+        if (user && AuthService.getAccessToken()) {
+          this.syncAgentsWithBackend();
+        }
+      });
   }
 
   /**
    * Build HTTP headers for agent-service requests.
-   * Includes X-Agent-Workflow-Id for consistent hash routing in k8s.
+   * Includes the user's bearer token (used for access control when the agent
+   * service has AGENT_AUTH_REQUIRED enabled) and X-Agent-Workflow-Id for
+   * consistent hash routing in k8s.
    */
   private agentHeaders(agentId?: string): { headers: HttpHeaders } {
     let headers = new HttpHeaders();
+    const token = AuthService.getAccessToken();
+    if (token) {
+      headers = headers.set("Authorization", `Bearer ${token}`);
+    }
     if (agentId) {
-      const wid = this.agentStateTracking.get(agentId)?.workflowId;
-      if (wid !== undefined) {
-        headers = headers.set("X-Agent-Workflow-Id", String(wid));
-      }
+      headers = headers.set("X-Agent-Workflow-Id", agentId);
     }
     return { headers };
+  }
+
+  private getCurrentWorkflowId(): number | undefined {
+    const match = window.location.pathname.match(/^\/user\/workflow\/(\d+)/);
+    if (!match) {
+      return undefined;
+    }
+    const workflowId = Number(match[1]);
+    return Number.isFinite(workflowId) && workflowId > 0 ? workflowId : undefined;
+  }
+
+  private buildRequestContext(): AgentRequestContext | undefined {
+    const userToken = AuthService.getAccessToken();
+    if (!userToken) {
+      this.notificationService.error("Please log in before sending a message to the agent.");
+      return undefined;
+    }
+
+    const context: AgentRequestContext = { userToken };
+    const workflowId = this.getCurrentWorkflowId();
+    if (workflowId !== undefined) {
+      context.workflowId = workflowId;
+    }
+
+    const selectedUnit = this.computingUnitStatusService.getSelectedComputingUnitValue();
+    if (selectedUnit) {
+      context.computingUnitId = selectedUnit.computingUnit.cuid;
+    }
+
+    return context;
+  }
+
+  private clearAgentCache(): void {
+    const hadAgents = this.agents.size > 0;
+    const hadTracking = this.agentStateTracking.size > 0;
+
+    for (const agentId of Array.from(this.agentStateTracking.keys())) {
+      this.stopStatePolling(agentId);
+    }
+    this.agents.clear();
+
+    if (hadAgents || hadTracking) {
+      this.agentChangeSubject.next();
+    }
+  }
+
+  private updateTrackingWorkflowContext(tracking: AgentStateTracking, workflowId?: number): void {
+    if (tracking.workflowId === workflowId) {
+      return;
+    }
+
+    tracking.stopPolling$.next();
+    tracking.stopPolling$ = new Subject<void>();
+    tracking.workflowId = workflowId;
+    tracking.wsWorkflowActive = false;
+
+    if (workflowId !== undefined && tracking.isActive) {
+      this.startWorkflowPolling(tracking);
+    }
   }
 
   /**
@@ -255,39 +309,63 @@ export class AgentService {
    * This is called on service initialization and handles backend restarts.
    */
   private syncAgentsWithBackend(): void {
+    if (!AuthService.getAccessToken()) {
+      this.clearAgentCache();
+      return;
+    }
+
     this.http
-      .get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`)
-      .pipe(catchError(() => of({ agents: [] })))
+      .get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`, this.agentHeaders())
+      .pipe(
+        catchError(() => {
+          this.clearAgentCache();
+          return of({ agents: [] });
+        })
+      )
       .subscribe(response => {
-        const backendAgentIds = new Set(response.agents.map(a => a.id));
-
-        // Remove any local agents that don't exist on the backend
-        const localAgentIds = Array.from(this.agents.keys());
-        for (const localId of localAgentIds) {
-          if (!backendAgentIds.has(localId)) {
-            this.agents.delete(localId);
-            this.stopStatePolling(localId);
-          }
-        }
-
-        // Update local cache with backend state
-        for (const apiAgent of response.agents) {
-          const existingAgent = this.agents.get(apiAgent.id);
-          if (existingAgent) {
-            // Update state from backend
-            existingAgent.state = this.mapStateToAgentState(apiAgent.state);
-            const tracking = this.agentStateTracking.get(apiAgent.id);
-            if (tracking) {
-              tracking.stateSubject.next(existingAgent.state);
-            }
-          }
-        }
-
-        // Notify subscribers if there were changes
-        if (localAgentIds.length !== this.agents.size) {
-          this.agentChangeSubject.next();
-        }
+        this.updateAgentCacheFromBackend(response.agents);
+        this.agentChangeSubject.next();
       });
+  }
+
+  private apiAgentToAgentInfo(apiAgent: ApiAgentInfo): AgentInfo {
+    return {
+      id: apiAgent.id,
+      name: apiAgent.name,
+      modelType: apiAgent.modelType,
+      isBaselineMode: false,
+      createdAt: new Date(apiAgent.createdAt),
+      state: this.mapStateToAgentState(apiAgent.state),
+      delegate: apiAgent.delegate
+        ? {
+            userInfo: apiAgent.delegate.userInfo,
+            workflowId: apiAgent.delegate.workflowId,
+            workflowName: apiAgent.delegate.workflowName,
+          }
+        : undefined,
+    };
+  }
+
+  private updateAgentCacheFromBackend(apiAgents: ApiAgentInfo[]): AgentInfo[] {
+    const agents = apiAgents.map(agent => this.apiAgentToAgentInfo(agent));
+    const backendAgentIds = new Set(agents.map(agent => agent.id));
+
+    for (const localId of Array.from(this.agents.keys())) {
+      if (!backendAgentIds.has(localId)) {
+        this.agents.delete(localId);
+        this.stopStatePolling(localId);
+      }
+    }
+
+    for (const agent of agents) {
+      this.agents.set(agent.id, agent);
+      const tracking = this.agentStateTracking.get(agent.id);
+      if (tracking && agent.state) {
+        tracking.stateSubject.next(agent.state);
+      }
+    }
+
+    return agents;
   }
 
   /**
@@ -408,9 +486,13 @@ export class AgentService {
    * Start WebSocket connection for real-time ReActSteps updates
    */
   private startStatePolling(agentId: string, tracking: AgentStateTracking): void {
-    // Build WebSocket URL
+    // Build WebSocket URL. Browsers cannot set headers on the WS handshake, so
+    // the bearer token is passed as the access-token query parameter (matching
+    // the other Texera websocket clients) for access control.
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}${this.AGENT_API_BASE}/agents/${agentId}/react`;
+    const token = AuthService.getAccessToken();
+    const tokenParam = token ? `?access-token=${encodeURIComponent(token)}` : "";
+    const wsUrl = `${wsProtocol}//${window.location.host}${this.AGENT_API_BASE}/agents/${agentId}/react${tokenParam}`;
 
     const ws = new WebSocket(wsUrl);
     tracking.websocket = ws;
@@ -609,7 +691,7 @@ export class AgentService {
       return false;
     }
 
-    const tracking = this.getOrCreateStateTracking(agentId, agent.delegate?.workflowId);
+    const tracking = this.getOrCreateStateTracking(agentId);
 
     if (tracking.isActive && tracking.websocket) {
       return true;
@@ -675,44 +757,23 @@ export class AgentService {
     return connectedIds;
   }
 
-  /**
-   * Get the workflow ID associated with an agent.
-   */
   public getAgentWorkflowId(agentId: string): number | undefined {
-    const agent = this.agents.get(agentId);
-    return agent?.delegate?.workflowId;
+    return this.agentStateTracking.get(agentId)?.workflowId;
   }
 
   /**
    * Create a new agent with the specified model type.
-   * Uses the user's current auth token for delegate mode.
    * @param modelType - The LLM model type to use
    * @param customName - Optional custom name for the agent
-   * @param workflowId - Optional workflow ID for delegate mode
    */
-  public createAgent(modelType: string, customName?: string, workflowId?: number): Observable<AgentInfo> {
+  public createAgent(modelType: string, customName?: string): Observable<AgentInfo> {
     return defer(() => {
-      const userToken = AuthService.getAccessToken();
-
       const body: any = {
         modelType,
         name: customName,
       };
 
-      // Include user token and workflowId for delegate mode if available
-      if (userToken) {
-        body.userToken = userToken;
-        if (workflowId !== undefined) {
-          body.workflowId = workflowId;
-        }
-        // Include computing unit ID for workflow execution
-        const selectedUnit = this.computingUnitStatusService.getSelectedComputingUnitValue();
-        if (selectedUnit) {
-          body.computingUnitId = selectedUnit.computingUnit.cuid;
-        }
-      }
-
-      return this.http.post<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents`, body).pipe(
+      return this.http.post<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents`, body, this.agentHeaders()).pipe(
         map(response => {
           const agentInfo: AgentInfo = {
             id: response.id,
@@ -728,12 +789,10 @@ export class AgentService {
                   workflowName: response.delegate.workflowName,
                 }
               : undefined,
-            settings: response.settings,
           };
 
           this.agents.set(response.id, agentInfo);
-          // Pass workflowId to enable workflow polling from backend database
-          const tracking = this.getOrCreateStateTracking(response.id, workflowId);
+          const tracking = this.getOrCreateStateTracking(response.id);
           // Set the initial state from the API response (agent is AVAILABLE after creation)
           tracking.stateSubject.next(agentInfo.state || AgentState.AVAILABLE);
           this.agentChangeSubject.next();
@@ -777,7 +836,6 @@ export class AgentService {
                   workflowName: response.delegate.workflowName,
                 }
               : undefined,
-            settings: response.settings,
           };
           this.agents.set(response.id, agentInfo);
           return agentInfo;
@@ -792,46 +850,17 @@ export class AgentService {
    * Also syncs local cache with backend - removes any stale agents that no longer exist on the backend.
    */
   public getAllAgents(): Observable<AgentInfo[]> {
-    return this.http.get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`).pipe(
-      map(response => {
-        const agents = response.agents.map(a => ({
-          id: a.id,
-          name: a.name,
-          modelType: a.modelType,
-          isBaselineMode: false,
-          createdAt: new Date(a.createdAt),
-          state: this.mapStateToAgentState(a.state),
-          delegate: a.delegate
-            ? {
-                userInfo: a.delegate.userInfo,
-                workflowId: a.delegate.workflowId,
-                workflowName: a.delegate.workflowName,
-              }
-            : undefined,
-          settings: a.settings,
-        }));
+    if (!AuthService.getAccessToken()) {
+      this.clearAgentCache();
+      return of([]);
+    }
 
-        // Build a set of backend agent IDs for quick lookup
-        const backendAgentIds = new Set(agents.map(a => a.id));
-
-        // Remove any local agents that don't exist on the backend
-        // This handles the case when agent-service restarts
-        const localAgentIds = Array.from(this.agents.keys());
-        for (const localId of localAgentIds) {
-          if (!backendAgentIds.has(localId)) {
-            this.agents.delete(localId);
-            this.stopStatePolling(localId);
-          }
-        }
-
-        // Update local cache with agents from backend
-        for (const agent of agents) {
-          this.agents.set(agent.id, agent);
-        }
-
-        return agents;
-      }),
-      catchError(() => of(Array.from(this.agents.values())))
+    return this.http.get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`, this.agentHeaders()).pipe(
+      map(response => this.updateAgentCacheFromBackend(response.agents)),
+      catchError(() => {
+        this.clearAgentCache();
+        return of([]);
+      })
     );
   }
 
@@ -914,10 +943,17 @@ export class AgentService {
       return;
     }
 
+    const context = this.buildRequestContext();
+    if (!context) {
+      return;
+    }
+    this.updateTrackingWorkflowContext(tracking, context.workflowId);
+
     const wsMessage = {
       type: "message",
       content: message,
       messageSource,
+      context,
     };
 
     try {
@@ -1036,7 +1072,7 @@ export class AgentService {
    * The backend broadcasts headChange + visible steps via WebSocket to all clients.
    */
   public checkoutStep(agentId: string, stepId: string): Observable<any> {
-    return this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/checkout`, { stepId });
+    return this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/checkout`, { stepId }, this.agentHeaders(agentId));
   }
 
   /**
@@ -1045,29 +1081,6 @@ export class AgentService {
   public getVisibleSteps(agentId: string): ReActStep[] {
     const tracking = this.agentStateTracking.get(agentId);
     return tracking ? tracking.reActStepsSubject.getValue() : [];
-  }
-
-  /**
-   * Get system information for an agent (system prompt and tools).
-   * Fetches from agent-service API.
-   */
-  public getSystemInfo(agentId: string): Observable<{
-    systemPrompt: string;
-    tools: Array<{ name: string; description: string; inputSchema: any; enabled: boolean }>;
-  }> {
-    return this.http
-      .get<{
-        systemPrompt: string;
-        tools: Array<{ name: string; description: string; inputSchema: any; enabled: boolean }>;
-      }>(`${this.AGENT_API_BASE}/agents/${agentId}/system-info`, this.agentHeaders(agentId))
-      .pipe(
-        catchError(() =>
-          of({
-            systemPrompt: "Unable to retrieve system prompt",
-            tools: [],
-          })
-        )
-      );
   }
 
   /**
@@ -1160,68 +1173,8 @@ export class AgentService {
    * Call this when you have the workflowId but tracking may have been created without it.
    */
   public ensureWorkflowPolling(agentId: string, workflowId: number): void {
-    this.getOrCreateStateTracking(agentId, workflowId);
-  }
-
-  /**
-   * Get agent settings.
-   */
-  public getAgentSettings(agentId: string): Observable<AgentSettingsApi> {
-    return this.http
-      .get<AgentSettingsApi>(`${this.AGENT_API_BASE}/agents/${agentId}/settings`, this.agentHeaders(agentId))
-      .pipe(
-        catchError(() =>
-          of({
-            maxOperatorResultCharLimit: 20000,
-            maxOperatorResultCellCharLimit: 4000,
-            toolTimeoutSeconds: 120,
-            executionTimeoutMinutes: 10,
-            disabledTools: [],
-            maxSteps: 10,
-            allowedOperatorTypes: [],
-          })
-        )
-      );
-  }
-
-  /**
-   * Update agent settings.
-   * Only provided values will be updated.
-   */
-  public updateAgentSettings(agentId: string, settings: Partial<AgentSettingsApi>): Observable<AgentSettingsApi> {
-    return this.http
-      .patch<AgentSettingsApi>(
-        `${this.AGENT_API_BASE}/agents/${agentId}/settings`,
-        settings,
-        this.agentHeaders(agentId)
-      )
-      .pipe(
-        map(response => {
-          // Update local cache if we have this agent
-          const agent = this.agents.get(agentId);
-          if (agent) {
-            agent.settings = response;
-          }
-          return response;
-        }),
-        catchError((error: unknown) => {
-          const err = error as { error?: { error?: string }; message?: string };
-          const errorMsg = err.error?.error || err.message || "Failed to update agent settings";
-          this.notificationService.error(errorMsg);
-          return throwError(() => new Error(errorMsg));
-        })
-      );
-  }
-
-  /**
-   * Get all available operator types for an agent.
-   */
-  public getAvailableOperatorTypes(agentId: string): Observable<Array<{ type: string; description: string }>> {
-    return this.http
-      .get<
-        Array<{ type: string; description: string }>
-      >(`${this.AGENT_API_BASE}/agents/${agentId}/operator-types`, this.agentHeaders(agentId))
-      .pipe(catchError(() => of([])));
+    const tracking = this.getOrCreateStateTracking(agentId);
+    this.updateTrackingWorkflowContext(tracking, workflowId);
   }
 
   // ============================================================================

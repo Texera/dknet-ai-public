@@ -34,6 +34,7 @@ import { UntilDestroy } from "@ngneat/until-destroy";
       <button (click)="retry()">Retry</button>
     </div>
     <router-outlet *ngIf="configLoaded"></router-outlet>
+    <texera-agent-panel *ngIf="configLoaded && copilotEnabled"></texera-agent-panel>
   `,
   standalone: false,
 })
@@ -53,5 +54,9 @@ export class AppComponent {
 
   retry(): void {
     window.location.reload();
+  }
+
+  get copilotEnabled(): boolean {
+    return this.config.env.copilotEnabled;
   }
 }

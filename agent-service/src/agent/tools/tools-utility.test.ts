@@ -26,6 +26,9 @@ import {
   formatExecuteOperatorResult,
   formatOperatorError,
   getVisibleResultHeaders,
+  limitToolExecutionOutputs,
+  limitResolvedToolOutput,
+  limitResolvedText,
 } from "./tools-utility";
 
 describe("getVisibleResultHeaders", () => {
@@ -79,6 +82,78 @@ describe("createErrorResult", () => {
 
   test("keeps the prefix even for empty error text", () => {
     expect(createErrorResult("")).toBe("[ERROR] ");
+  });
+});
+
+describe("limitResolvedText", () => {
+  test("returns text unchanged when it fits the limit", () => {
+    expect(limitResolvedText("hello", 5)).toBe("hello");
+  });
+
+  test("truncates long text and keeps the returned value within the limit", () => {
+    const out = limitResolvedText("abcdefghijklmnopqrstuvwxyz", 24);
+    expect(out.length).toBeLessThanOrEqual(24);
+    expect(out).toContain("...[truncated]");
+    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
+
+  test("returns an empty string for a zero limit", () => {
+    expect(limitResolvedText("hello", 0)).toBe("");
+  });
+
+  test("ignores invalid limits", () => {
+    expect(limitResolvedText("hello", undefined)).toBe("hello");
+    expect(limitResolvedText("hello", Number.POSITIVE_INFINITY)).toBe("hello");
+    expect(limitResolvedText("hello", -1)).toBe("hello");
+  });
+});
+
+describe("limitResolvedToolOutput", () => {
+  test("limits string tool outputs", () => {
+    const out = limitResolvedToolOutput("abcdefghijklmnopqrstuvwxyz", 24);
+    expect(typeof out).toBe("string");
+    expect((out as string).length).toBeLessThanOrEqual(24);
+    expect(out).toContain("...[truncated]");
+  });
+
+  test("serializes oversized non-string tool outputs before limiting", () => {
+    const out = limitResolvedToolOutput({ rows: ["abcdefghijklmnopqrstuvwxyz"] }, 24);
+    expect(typeof out).toBe("string");
+    expect((out as string).length).toBeLessThanOrEqual(24);
+    expect(out).toContain("...[truncated]");
+  });
+
+  test("preserves non-string tool outputs that fit the limit", () => {
+    const value = { ok: true };
+    expect(limitResolvedToolOutput(value, 100)).toBe(value);
+  });
+});
+
+describe("limitToolExecutionOutputs", () => {
+  test("limits async tool execute return values", async () => {
+    const tools = {
+      longTool: {
+        execute: async () => "abcdefghijklmnopqrstuvwxyz",
+      },
+    };
+
+    limitToolExecutionOutputs(tools, () => 24);
+    const out = await tools.longTool.execute();
+
+    expect(out.length).toBeLessThanOrEqual(24);
+    expect(out).toContain("...[truncated]");
+    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
+
+  test("leaves tool definitions without execute untouched", () => {
+    const tools = {
+      metadataOnly: {
+        description: "no execution",
+      },
+    };
+
+    expect(limitToolExecutionOutputs(tools, () => 24)).toBe(tools);
+    expect(tools.metadataOnly.description).toBe("no execution");
   });
 });
 
