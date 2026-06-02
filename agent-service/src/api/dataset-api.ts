@@ -73,7 +73,7 @@ const DATASET_BASE_URL = "dataset";
 
 function datasetApiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${getBackendConfig().apiEndpoint}/api/${DATASET_BASE_URL}${normalizedPath}`;
+  return `${getBackendConfig().fileServiceEndpoint}/api/${DATASET_BASE_URL}${normalizedPath}`;
 }
 
 async function requestDatasetJson<T>(

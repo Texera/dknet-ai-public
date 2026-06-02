@@ -65,7 +65,7 @@ describe("dataset-api", () => {
 
     expect(datasets[0].dataset.did).toBe(7);
     expect(calls).toHaveLength(1);
-    expect(calls[0][0]).toBe("http://localhost:8080/api/dataset/list");
+    expect(calls[0][0]).toBe("http://localhost:9092/api/dataset/list");
     expect(calls[0][1]?.headers).toEqual({
       Authorization: "Bearer token",
       "Content-Type": "application/json",
@@ -88,8 +88,8 @@ describe("dataset-api", () => {
     expect(versions[0].dvid).toBe(11);
     expect(tree.fileNodes).toEqual([]);
     expect(calls).toEqual([
-      "http://localhost:8080/api/dataset/7/version/list",
-      "http://localhost:8080/api/dataset/7/version/11/rootFileNodes",
+      "http://localhost:9092/api/dataset/7/version/list",
+      "http://localhost:9092/api/dataset/7/version/11/rootFileNodes",
     ]);
   });
 

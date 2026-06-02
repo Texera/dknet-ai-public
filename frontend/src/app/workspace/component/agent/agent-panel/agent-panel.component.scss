@@ -19,18 +19,21 @@
 
 :host {
   display: block;
-  width: 100%;
-  height: 100%;
   position: fixed;
-  z-index: 3;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1000;
+  pointer-events: none;
 }
 
 #agent-container {
-  position: absolute;
-  top: calc(-100% + 80px);
-  right: 0;
-  z-index: 3;
+  position: fixed;
+  right: 16px;
+  bottom: 84px;
+  z-index: 1001;
   background: white;
+  pointer-events: auto;
 }
 
 #title {
@@ -47,7 +50,8 @@
   position: fixed;
   bottom: 40px; // Position above the mini-map button
   right: 10px;
-  z-index: 4;
+  z-index: 1002;
+  pointer-events: auto;
   box-shadow:
     0 3px 1px -2px #0003,
     0 2px 2px #00000024,
@@ -126,21 +130,6 @@
 
   .agent-tab-name {
     flex: 1;
-  }
-
-  // Visual feedback for agents on different workflows
-  &.workflow-mismatch {
-    opacity: 0.6;
-
-    .agent-tab-name {
-      color: #8c8c8c;
-    }
-  }
-
-  .workflow-lock-icon {
-    color: #faad14;
-    font-size: 12px;
-    margin-left: -4px;
   }
 }
 

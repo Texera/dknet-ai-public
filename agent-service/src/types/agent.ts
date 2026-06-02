@@ -147,9 +147,6 @@ export interface AgentInfo {
 export interface CreateAgentRequest {
   modelType: string;
   name?: string;
-  userToken?: string;
-  workflowId?: number;
-  computingUnitId?: number;
   settings?: AgentSettingsApi;
 }
 
@@ -181,10 +178,9 @@ export interface SerializedAgentSettings {
  * Durable, JSON-serializable snapshot of a TexeraAgent.
  *
  * Captures the conversation (ReAct step tree + HEAD), the workflow being
- * edited, settings, and delegate metadata so an agent can be reconstructed
- * after a process restart. The user token is deliberately omitted (it is
- * short-lived and security-sensitive); execution-result caches are also
- * omitted as they can be recomputed.
+ * edited, and settings so an agent can be reconstructed after a process
+ * restart. Request-scoped delegate context and execution-result caches are
+ * omitted as they can be supplied again or recomputed.
  */
 export interface AgentSnapshot {
   version: 1;

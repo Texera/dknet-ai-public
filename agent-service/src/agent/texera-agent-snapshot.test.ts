@@ -123,10 +123,23 @@ describe("TexeraAgent.toSnapshot", () => {
     const snap = newAgent(new Date("2024-01-01T00:00:00.000Z")).toSnapshot();
     expect(snap.createdAt).toBe("2024-01-01T00:00:00.000Z");
   });
+
+  test("does not persist request-scoped delegate context", () => {
+    const agent = newAgent();
+    agent.setDelegateConfig({
+      userToken: "token",
+      userInfo: { uid: 1, name: "user", email: "u@example.com", role: "REGULAR" },
+      workflowId: 7,
+      workflowName: "wf",
+      computingUnitId: 3,
+    });
+
+    expect(agent.toSnapshot().delegate).toBeUndefined();
+  });
 });
 
 describe("TexeraAgent.restoreFromSnapshot", () => {
-  test("restores conversation, settings, workflow, and delegate", () => {
+  test("restores conversation, settings, and workflow without request delegate", () => {
     const snap = sampleSnapshot();
     const agent = newAgent(new Date(snap.createdAt));
     agent.restoreFromSnapshot(snap);
@@ -147,9 +160,8 @@ describe("TexeraAgent.restoreFromSnapshot", () => {
         .operators.map(o => o.operatorID)
     ).toEqual(["op1"]);
 
-    // Delegate metadata is restored, but the user token is not persisted.
-    expect(agent.getDelegateConfig()?.workflowId).toBe(7);
-    expect(agent.getDelegateConfig()?.userToken).toBe("");
+    // Delegate metadata is request-scoped and must not be restored from disk.
+    expect(agent.getDelegateConfig()).toBeUndefined();
   });
 
   test("round-trips: toSnapshot(restore(s)) deep-equals s", () => {
@@ -159,7 +171,9 @@ describe("TexeraAgent.restoreFromSnapshot", () => {
 
     // Survives a JSON round-trip as it would on disk.
     const roundTripped = JSON.parse(JSON.stringify(agent.toSnapshot())) as AgentSnapshot;
-    expect(roundTripped).toEqual(snap);
+    const expected = { ...snap };
+    delete expected.delegate;
+    expect(roundTripped).toEqual(expected);
   });
 
   test("rejects an unsupported snapshot version", () => {

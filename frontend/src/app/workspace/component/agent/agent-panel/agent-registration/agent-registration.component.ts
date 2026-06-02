@@ -20,9 +20,6 @@
 import { Component, EventEmitter, OnDestroy, OnInit, Output } from "@angular/core";
 import { AgentService, ModelType } from "../../../../service/agent/agent.service";
 import { NotificationService } from "../../../../../common/service/notification/notification.service";
-import { WorkflowActionService } from "../../../../service/workflow-graph/model/workflow-action.service";
-import { ComputingUnitStatusService } from "../../../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
-import { ComputingUnitState } from "../../../../../common/type/computing-unit-connection.interface";
 import { Subject, takeUntil } from "rxjs";
 import { NgIf, NgFor } from "@angular/common";
 import { NzSpinComponent } from "ng-zorro-antd/spin";
@@ -31,10 +28,8 @@ import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
 import { NzInputDirective } from "ng-zorro-antd/input";
 import { FormsModule } from "@angular/forms";
-import { NzAlertComponent } from "ng-zorro-antd/alert";
 import { NzButtonComponent } from "ng-zorro-antd/button";
 import { NzWaveDirective } from "ng-zorro-antd/core/wave";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 
 @Component({
   selector: "texera-agent-registration",
@@ -49,10 +44,8 @@ import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
     NzSpaceCompactItemDirective,
     NzInputDirective,
     FormsModule,
-    NzAlertComponent,
     NzButtonComponent,
     NzWaveDirective,
-    NzTooltipDirective,
   ],
 })
 export class AgentRegistrationComponent implements OnInit, OnDestroy {
@@ -63,28 +56,18 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
   public customAgentName: string = "Texera Agent";
   public isLoadingModels: boolean = false;
   public hasLoadingError: boolean = false;
-  public computingUnitConnected: boolean = false;
   public isCreating: boolean = false;
 
   private destroy$ = new Subject<void>();
 
   constructor(
     private agentService: AgentService,
-    private notificationService: NotificationService,
-    private workflowActionService: WorkflowActionService,
-    private computingUnitStatusService: ComputingUnitStatusService
+    private notificationService: NotificationService
   ) {}
 
   ngOnInit(): void {
     this.isLoadingModels = true;
     this.hasLoadingError = false;
-
-    this.computingUnitStatusService
-      .getStatus()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(status => {
-        this.computingUnitConnected = status === ComputingUnitState.Running;
-      });
 
     this.agentService
       .fetchModelTypes()
@@ -123,11 +106,8 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
 
     this.isCreating = true;
 
-    const workflowMetadata = this.workflowActionService.getWorkflowMetadata();
-    const workflowId = workflowMetadata?.wid;
-
     this.agentService
-      .createAgent(this.selectedModelType!, this.customAgentName || undefined, workflowId)
+      .createAgent(this.selectedModelType!, this.customAgentName || undefined)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: agentInfo => {
@@ -148,6 +128,6 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
   }
 
   public canCreate(): boolean {
-    return this.selectedModelType !== null && !this.isCreating && this.computingUnitConnected;
+    return this.selectedModelType !== null && !this.isCreating;
   }
 }

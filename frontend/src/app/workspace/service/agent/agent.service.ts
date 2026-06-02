@@ -184,6 +184,12 @@ interface AgentStateTracking {
   isActive: boolean;
 }
 
+interface AgentRequestContext {
+  userToken: string;
+  workflowId?: number;
+  computingUnitId?: number;
+}
+
 /**
  * Manages the workspace's agents via the agent-service HTTP/WebSocket
  * API. Owns the local agent list, per-agent state tracking (ReAct steps, HEAD
@@ -241,12 +247,54 @@ export class AgentService {
   private agentHeaders(agentId?: string): { headers: HttpHeaders } {
     let headers = new HttpHeaders();
     if (agentId) {
-      const wid = this.agentStateTracking.get(agentId)?.workflowId;
-      if (wid !== undefined) {
-        headers = headers.set("X-Agent-Workflow-Id", String(wid));
-      }
+      headers = headers.set("X-Agent-Workflow-Id", agentId);
     }
     return { headers };
+  }
+
+  private getCurrentWorkflowId(): number | undefined {
+    const match = window.location.pathname.match(/^\/user\/workflow\/(\d+)/);
+    if (!match) {
+      return undefined;
+    }
+    const workflowId = Number(match[1]);
+    return Number.isFinite(workflowId) && workflowId > 0 ? workflowId : undefined;
+  }
+
+  private buildRequestContext(): AgentRequestContext | undefined {
+    const userToken = AuthService.getAccessToken();
+    if (!userToken) {
+      this.notificationService.error("Please log in before sending a message to the agent.");
+      return undefined;
+    }
+
+    const context: AgentRequestContext = { userToken };
+    const workflowId = this.getCurrentWorkflowId();
+    if (workflowId !== undefined) {
+      context.workflowId = workflowId;
+    }
+
+    const selectedUnit = this.computingUnitStatusService.getSelectedComputingUnitValue();
+    if (selectedUnit) {
+      context.computingUnitId = selectedUnit.computingUnit.cuid;
+    }
+
+    return context;
+  }
+
+  private updateTrackingWorkflowContext(tracking: AgentStateTracking, workflowId?: number): void {
+    if (tracking.workflowId === workflowId) {
+      return;
+    }
+
+    tracking.stopPolling$.next();
+    tracking.stopPolling$ = new Subject<void>();
+    tracking.workflowId = workflowId;
+    tracking.wsWorkflowActive = false;
+
+    if (workflowId !== undefined && tracking.isActive) {
+      this.startWorkflowPolling(tracking);
+    }
   }
 
   /**
@@ -609,7 +657,7 @@ export class AgentService {
       return false;
     }
 
-    const tracking = this.getOrCreateStateTracking(agentId, agent.delegate?.workflowId);
+    const tracking = this.getOrCreateStateTracking(agentId);
 
     if (tracking.isActive && tracking.websocket) {
       return true;
@@ -675,42 +723,21 @@ export class AgentService {
     return connectedIds;
   }
 
-  /**
-   * Get the workflow ID associated with an agent.
-   */
   public getAgentWorkflowId(agentId: string): number | undefined {
-    const agent = this.agents.get(agentId);
-    return agent?.delegate?.workflowId;
+    return this.agentStateTracking.get(agentId)?.workflowId;
   }
 
   /**
    * Create a new agent with the specified model type.
-   * Uses the user's current auth token for delegate mode.
    * @param modelType - The LLM model type to use
    * @param customName - Optional custom name for the agent
-   * @param workflowId - Optional workflow ID for delegate mode
    */
-  public createAgent(modelType: string, customName?: string, workflowId?: number): Observable<AgentInfo> {
+  public createAgent(modelType: string, customName?: string): Observable<AgentInfo> {
     return defer(() => {
-      const userToken = AuthService.getAccessToken();
-
       const body: any = {
         modelType,
         name: customName,
       };
-
-      // Include user token and workflowId for delegate mode if available
-      if (userToken) {
-        body.userToken = userToken;
-        if (workflowId !== undefined) {
-          body.workflowId = workflowId;
-        }
-        // Include computing unit ID for workflow execution
-        const selectedUnit = this.computingUnitStatusService.getSelectedComputingUnitValue();
-        if (selectedUnit) {
-          body.computingUnitId = selectedUnit.computingUnit.cuid;
-        }
-      }
 
       return this.http.post<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents`, body).pipe(
         map(response => {
@@ -732,8 +759,7 @@ export class AgentService {
           };
 
           this.agents.set(response.id, agentInfo);
-          // Pass workflowId to enable workflow polling from backend database
-          const tracking = this.getOrCreateStateTracking(response.id, workflowId);
+          const tracking = this.getOrCreateStateTracking(response.id);
           // Set the initial state from the API response (agent is AVAILABLE after creation)
           tracking.stateSubject.next(agentInfo.state || AgentState.AVAILABLE);
           this.agentChangeSubject.next();
@@ -914,10 +940,17 @@ export class AgentService {
       return;
     }
 
+    const context = this.buildRequestContext();
+    if (!context) {
+      return;
+    }
+    this.updateTrackingWorkflowContext(tracking, context.workflowId);
+
     const wsMessage = {
       type: "message",
       content: message,
       messageSource,
+      context,
     };
 
     try {
@@ -1160,7 +1193,8 @@ export class AgentService {
    * Call this when you have the workflowId but tracking may have been created without it.
    */
   public ensureWorkflowPolling(agentId: string, workflowId: number): void {
-    this.getOrCreateStateTracking(agentId, workflowId);
+    const tracking = this.getOrCreateStateTracking(agentId);
+    this.updateTrackingWorkflowContext(tracking, workflowId);
   }
 
   /**

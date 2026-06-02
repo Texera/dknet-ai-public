@@ -173,7 +173,7 @@ describe("dataset tools", () => {
 
     expect(result).toContain("version=v2 (dvid=9)");
     expect(result).toContain("/alice@example.com/sales/v2/data.csv");
-    expect(calls).toEqual(["http://localhost:8080/api/dataset/1/version/latest"]);
+    expect(calls).toEqual(["http://localhost:9092/api/dataset/1/version/latest"]);
   });
 
   test("listDatasetFiles tool reports invalid dataset IDs", async () => {

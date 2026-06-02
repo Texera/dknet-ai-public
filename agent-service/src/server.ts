@@ -112,8 +112,7 @@ export async function rehydrateAgents(
 
 async function createAgentInstance(
   modelType: string,
-  customName?: string,
-  delegateConfig?: AgentDelegateConfig
+  customName?: string
 ): Promise<{ agentId: string; agent: TexeraAgent }> {
   const agentId = `agent-${++agentCounter}`;
 
@@ -126,39 +125,51 @@ async function createAgentInstance(
 
   await agent.initialize();
 
-  if (delegateConfig?.userToken) {
-    let shouldSetDelegateConfig = delegateConfig.workflowId === undefined;
-
-    if (delegateConfig.workflowId !== undefined) {
-      try {
-        const workflow = await retrieveWorkflow(delegateConfig.userToken, delegateConfig.workflowId);
-        delegateConfig.workflowName = workflow.name;
-
-        const workflowState = agent.getWorkflowState();
-        workflowState.setWorkflowContent(workflow.content);
-        shouldSetDelegateConfig = true;
-
-        log.info({ agentId, workflowId: delegateConfig.workflowId }, "loaded workflow for agent");
-      } catch (error) {
-        log.warn({ agentId, workflowId: delegateConfig.workflowId, err: error }, "failed to load workflow");
-      }
-    }
-
-    if (shouldSetDelegateConfig) {
-      agent.setDelegateConfig({
-        userToken: delegateConfig.userToken,
-        userInfo: delegateConfig.userInfo,
-        workflowId: delegateConfig.workflowId,
-        workflowName: delegateConfig.workflowName,
-        computingUnitId: delegateConfig.computingUnitId,
-      });
-    }
-  }
-
   agentStore.set(agentId, agent);
-  log.info({ agentId, delegate: !!delegateConfig }, "created agent");
+  log.info({ agentId }, "created agent");
 
   return { agentId, agent };
+}
+
+export interface AgentRequestContext {
+  userToken?: string;
+  workflowId?: number;
+  computingUnitId?: number;
+}
+
+export async function applyAgentRequestContext(
+  agentId: string,
+  agent: TexeraAgent,
+  context: AgentRequestContext
+): Promise<void> {
+  const userToken = context.userToken?.trim();
+  if (!userToken) {
+    throw new Error("User token is required");
+  }
+  if (!validateToken(userToken)) {
+    throw new Error("Invalid or expired token");
+  }
+
+  const delegateConfig: AgentDelegateConfig = {
+    userToken,
+    userInfo: extractUserFromToken(userToken),
+    workflowId: context.workflowId,
+    computingUnitId: context.computingUnitId,
+  };
+
+  if (context.workflowId !== undefined) {
+    const workflow = await retrieveWorkflow(userToken, context.workflowId);
+    delegateConfig.workflowName = workflow.name;
+    agent.getWorkflowState().setWorkflowContent(workflow.content);
+    log.info(
+      { agentId, workflowId: context.workflowId, computingUnitId: context.computingUnitId },
+      "applied workflow request context"
+    );
+  } else {
+    log.debug({ agentId }, "applied token-only request context");
+  }
+
+  agent.setDelegateConfig(delegateConfig);
 }
 
 function getAgentInfo(agentId: string, agent: TexeraAgent): AgentInfo {
@@ -218,6 +229,10 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       set.status = 401;
       return { error: "Invalid or expired token" };
     }
+    if (errorMessage === "User token is required") {
+      set.status = 401;
+      return { error: "User token is required" };
+    }
     if (errorMessage === "modelType is required") {
       set.status = 400;
       return { error: "modelType is required" };
@@ -233,28 +248,13 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
   .post(
     "/",
     async ({ body }) => {
-      const { modelType, name, userToken, workflowId, computingUnitId, settings } = body as CreateAgentRequest;
+      const { modelType, name, settings } = body as CreateAgentRequest;
 
       if (!modelType) {
         throw new Error("modelType is required");
       }
 
-      let delegateConfig: AgentDelegateConfig | undefined;
-      if (userToken) {
-        if (!validateToken(userToken)) {
-          throw new Error("Invalid or expired token");
-        }
-
-        const userInfo = extractUserFromToken(userToken);
-        delegateConfig = {
-          userToken,
-          userInfo,
-          workflowId,
-          computingUnitId,
-        };
-      }
-
-      const { agentId, agent } = await createAgentInstance(modelType, name, delegateConfig);
+      const { agentId, agent } = await createAgentInstance(modelType, name);
 
       if (settings) {
         log.info(
@@ -286,9 +286,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       body: t.Object({
         modelType: t.String(),
         name: t.Optional(t.String()),
-        userToken: t.Optional(t.String()),
-        workflowId: t.Optional(t.Number()),
-        computingUnitId: t.Optional(t.Number()),
         settings: t.Optional(
           t.Object({
             maxOperatorResultCharLimit: t.Optional(t.Number()),
@@ -477,6 +474,10 @@ interface WsMessage {
   type: "message" | "stop";
   content?: string;
   messageSource?: "chat" | "feedback";
+  context?: AgentRequestContext;
+  userToken?: string;
+  workflowId?: number;
+  computingUnitId?: number;
 }
 
 interface OperatorResultSummaryWs {
@@ -540,6 +541,14 @@ function broadcastToAgent(agentId: string, message: WsOutgoingMessage): void {
       agent.removeWebsocket(ws);
     }
   }
+}
+
+function getRequestContextFromMessage(msg: WsMessage): AgentRequestContext {
+  return {
+    userToken: msg.context?.userToken ?? msg.userToken,
+    workflowId: msg.context?.workflowId ?? msg.workflowId,
+    computingUnitId: msg.context?.computingUnitId ?? msg.computingUnitId,
+  };
 }
 
 export function buildApp() {
@@ -608,18 +617,20 @@ export function buildApp() {
 
           wsLog.info({ agentId, preview: msg.content.substring(0, 50) }, "received message");
 
-          agent.setStepCallback((step: ReActStep) => {
-            const hasToolCalls = step.toolCalls && step.toolCalls.length > 0;
-            broadcastToAgent(agentId, {
-              type: "step",
-              step,
-              ...(hasToolCalls ? { operatorResults: getOperatorResultSummaries(agent) } : {}),
-            });
-          });
-
-          broadcastToAgent(agentId, { type: "state", state: "GENERATING" });
-
           try {
+            await applyAgentRequestContext(agentId, agent, getRequestContextFromMessage(msg));
+
+            agent.setStepCallback((step: ReActStep) => {
+              const hasToolCalls = step.toolCalls && step.toolCalls.length > 0;
+              broadcastToAgent(agentId, {
+                type: "step",
+                step,
+                ...(hasToolCalls ? { operatorResults: getOperatorResultSummaries(agent) } : {}),
+              });
+            });
+
+            broadcastToAgent(agentId, { type: "state", state: "GENERATING" });
+
             const result = await agent.sendMessage(msg.content, msg.messageSource);
 
             agent.setStepCallback(null);
@@ -642,6 +653,7 @@ export function buildApp() {
             wsLog.info({ agentId, steps: result.messages.length }, "agent run complete");
           } catch (error: any) {
             agent.setStepCallback(null);
+            broadcastToAgent(agentId, { type: "state", state: agent.getState() });
             broadcastToAgent(agentId, { type: "error", error: error.message });
           }
         }
@@ -676,6 +688,10 @@ export function _resetAgentStoreForTests(): void {
 // fresh temp directory.
 export function _getSnapshotStoreForTests(): AgentSnapshotStore | null {
   return getSnapshotStore();
+}
+
+export function _getAgentForTests(agentId: string): TexeraAgent | undefined {
+  return agentStore.get(agentId);
 }
 
 function printStartupMessage(app: ReturnType<typeof buildApp>) {

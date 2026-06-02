@@ -886,14 +886,6 @@ export class TexeraAgent {
         maxSteps: this.settings.maxSteps,
         allowedOperatorTypes: this.settings.allowedOperatorTypes,
       },
-      delegate: this.delegateConfig
-        ? {
-            userInfo: this.delegateConfig.userInfo,
-            workflowId: this.delegateConfig.workflowId,
-            workflowName: this.delegateConfig.workflowName,
-            computingUnitId: this.delegateConfig.computingUnitId,
-          }
-        : undefined,
       steps: Array.from(this.stepsById.values()),
       messageGroups,
       workflowContent: this.workflowState.getWorkflowContent(),
@@ -901,10 +893,9 @@ export class TexeraAgent {
   }
 
   /**
-   * Restore conversation, workflow, settings, and delegate metadata from a
-   * snapshot. Must be called on a freshly constructed agent (one built with the
-   * snapshot's createdAt). The restored delegate carries no user token, so the
-   * caller must re-attach one before the agent can execute or auto-persist.
+   * Restore conversation, workflow, and settings from a snapshot. Must be called
+   * on a freshly constructed agent (one built with the snapshot's createdAt).
+   * Delegate metadata is request-scoped and is not restored from disk.
    */
   restoreFromSnapshot(snapshot: AgentSnapshot): void {
     if (snapshot.version !== 1) {
@@ -943,15 +934,7 @@ export class TexeraAgent {
     }
     this.head = snapshot.head;
 
-    if (snapshot.delegate) {
-      this.delegateConfig = {
-        userToken: "",
-        userInfo: snapshot.delegate.userInfo,
-        workflowId: snapshot.delegate.workflowId,
-        workflowName: snapshot.delegate.workflowName,
-        computingUnitId: snapshot.delegate.computingUnitId,
-      };
-    }
+    this.delegateConfig = undefined;
 
     this.workflowState.setWorkflowContent(snapshot.workflowContent);
     this.rebuildSystemPrompt();

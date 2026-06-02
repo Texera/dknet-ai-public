@@ -21,7 +21,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildApp, _resetAgentStoreForTests, _getSnapshotStoreForTests, rehydrateAgents } from "./server";
+import {
+  buildApp,
+  _resetAgentStoreForTests,
+  _getSnapshotStoreForTests,
+  _getAgentForTests,
+  applyAgentRequestContext,
+  rehydrateAgents,
+} from "./server";
 import { AgentSnapshotStore } from "./persistence/agent-snapshot-store";
 import { OperatorResultSerializationMode } from "./types/agent";
 import type { AgentSnapshot } from "./types/agent";
@@ -114,14 +121,27 @@ describe(`POST ${API}/agents`, () => {
     expect(bNum).toBe(aNum + 1);
   });
 
-  test("rejects invalid token", async () => {
+  test("ignores request context fields at creation time", async () => {
     const res = await postJson(`${API}/agents`, {
       modelType: "m",
       userToken: "obviously-not-a-jwt",
+      workflowId: 7,
+      computingUnitId: 3,
     });
-    expect(res.status).toBe(401);
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toBe("Invalid or expired token");
+    expect(res.status).toBe(200);
+    const created = await readJson<{
+      id: string;
+      delegate?: { userToken: string; workflowId?: number; computingUnitId?: number };
+    }>(res);
+    expect(created.delegate).toBeUndefined();
+
+    const systemInfo = await readJson<{
+      tools: Array<{ name: string }>;
+    }>(await getJson(`${API}/agents/${created.id}/system-info`));
+    const toolNames = systemInfo.tools.map(tool => tool.name);
+    expect(toolNames).not.toContain("listDatasets");
+    expect(toolNames).not.toContain("listDatasetVersions");
+    expect(toolNames).not.toContain("listDatasetFiles");
   });
 
   test("rejects missing modelType", async () => {
@@ -131,7 +151,7 @@ describe(`POST ${API}/agents`, () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 
-  test("token-only delegated agents expose dataset tools", async () => {
+  test("token-only request context exposes dataset tools", async () => {
     const token = unsignedJwt({
       userId: 1,
       sub: "alice",
@@ -140,14 +160,17 @@ describe(`POST ${API}/agents`, () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
 
-    const createRes = await postJson(`${API}/agents`, { modelType: "m", userToken: token });
+    const createRes = await postJson(`${API}/agents`, { modelType: "m" });
     expect(createRes.status).toBe(200);
     const created = await readJson<{
       id: string;
       delegate?: { userToken: string; workflowId?: number };
     }>(createRes);
-    expect(created.delegate?.userToken).toBe("***");
-    expect(created.delegate?.workflowId).toBeUndefined();
+    expect(created.delegate).toBeUndefined();
+
+    const agent = _getAgentForTests(created.id);
+    expect(agent).toBeDefined();
+    await applyAgentRequestContext(created.id, agent!, { userToken: token });
 
     const systemInfo = await readJson<{
       tools: Array<{ name: string }>;
@@ -157,6 +180,17 @@ describe(`POST ${API}/agents`, () => {
     expect(toolNames).toContain("listDatasetVersions");
     expect(toolNames).toContain("listDatasetFiles");
     expect(toolNames).not.toContain("executeOperator");
+  });
+
+  test("request context rejects invalid tokens", async () => {
+    const createRes = await postJson(`${API}/agents`, { modelType: "m" });
+    const created = await readJson<{ id: string }>(createRes);
+    const agent = _getAgentForTests(created.id);
+    expect(agent).toBeDefined();
+
+    await expect(applyAgentRequestContext(created.id, agent!, { userToken: "obviously-not-a-jwt" })).rejects.toThrow(
+      "Invalid or expired token"
+    );
   });
 });
 

@@ -46,6 +46,7 @@ spec:
       allowedRoutes:
         namespaces:
           from: Same
+    {{- if .Values.gatewayConfig.https.enabled }}
     - name: https
       protocol: HTTPS
       port: 443
@@ -59,6 +60,7 @@ spec:
         mode: Terminate
         certificateRefs:
           - name: {{ (index .Values "gatewayConfig" "tlsSecretName") | default (printf "%s-cert" .Release.Name) }}
+    {{- end }}
     {{- if .Values.minio.gateway.enabled }}
     - name: minio-http
       protocol: HTTP
