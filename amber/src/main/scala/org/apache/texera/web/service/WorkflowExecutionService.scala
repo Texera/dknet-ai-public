@@ -58,10 +58,16 @@ object WorkflowExecutionService {
   }
 
   /**
-    * The non-internal output ports (across all physical operators) of the given to-view logical
-    * operators. Since the client ships a ready-to-run physical plan, the CU re-derives which ports
-    * need result storage from that plan plus the requested view operators. Terminal sink ports are
-    * materialized by the schedule generator regardless of this set.
+    * The non-internal output ports that need result storage so their results are viewable: the
+    * output ports of every TERMINAL physical operator (no downstream links — i.e. the operators at
+    * the end of each path, whose outputs are the workflow's results) UNION those of the explicitly
+    * requested to-view ("eye-icon") operators.
+    *
+    * Since the client now ships a ready-to-run physical plan and the CU no longer compiles in
+    * process, the CU re-derives this set here. It mirrors the in-process compiler's original rule
+    * (`logicalPlan.getTerminalOperatorIds ++ opsToViewResult`), expressed on the physical plan via
+    * downstream-link reachability. (Blocking/intermediate edges are materialized separately by the
+    * schedule generator.)
     */
   def outputPortsForViewResult(
       physicalPlan: org.apache.texera.amber.core.workflow.PhysicalPlan,
@@ -69,7 +75,12 @@ object WorkflowExecutionService {
   ): Set[GlobalPortIdentity] = {
     val viewOps = opsToViewResult.map(OperatorIdentity(_)).toSet
     physicalPlan.operators
-      .filter(physicalOp => viewOps.contains(physicalOp.id.logicalOpId))
+      .filter { physicalOp =>
+        // a terminal operator (no downstream physical links) is a workflow output, OR the operator
+        // was explicitly requested for viewing.
+        physicalPlan.getDownstreamPhysicalLinks(physicalOp.id).isEmpty ||
+        viewOps.contains(physicalOp.id.logicalOpId)
+      }
       .flatMap { physicalOp =>
         physicalOp.outputPorts.keys
           .filterNot(_.internal)

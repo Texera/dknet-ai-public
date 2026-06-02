@@ -325,7 +325,7 @@ object WorkflowExecutionsResource {
 
   def getResultUrisByExecutionId(eid: ExecutionIdentity): List[URI] = {
     if (RemoteExecutionMetadata.enabled) {
-      return List.empty
+      return RemoteExecutionMetadata.getResultUrisByExecutionId(eid.id.toLong)
     }
     context
       .select(OPERATOR_PORT_EXECUTIONS.RESULT_URI)
@@ -466,6 +466,11 @@ object WorkflowExecutionsResource {
       globalPortId: GlobalPortIdentity,
       size: Long
   ): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      // no-op: result-size tracking (a quota/display concern) is owned by the dashboard service in
+      // remote mode; the DB-less computing unit does not persist it.
+      return
+    }
     context
       .update(OPERATOR_PORT_EXECUTIONS)
       .set(OPERATOR_PORT_EXECUTIONS.RESULT_SIZE, Integer.valueOf(size.toInt))
@@ -480,6 +485,9 @@ object WorkflowExecutionsResource {
     * @param eid Execution ID associated with the runtime statistics document.
     */
   def updateRuntimeStatsSize(eid: ExecutionIdentity): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return // see updateResultSize: size tracking is owned by the dashboard in remote mode.
+    }
     val statsUriOpt = context
       .select(WORKFLOW_EXECUTIONS.RUNTIME_STATS_URI)
       .from(WORKFLOW_EXECUTIONS)
@@ -504,6 +512,9 @@ object WorkflowExecutionsResource {
     * @param opId Operator ID of the corresponding operator.
     */
   def updateConsoleMessageSize(eid: ExecutionIdentity, opId: OperatorIdentity): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return // see updateResultSize: size tracking is owned by the dashboard in remote mode.
+    }
     val uriOpt = context
       .select(OPERATOR_EXECUTIONS.CONSOLE_MESSAGES_URI)
       .from(OPERATOR_EXECUTIONS)

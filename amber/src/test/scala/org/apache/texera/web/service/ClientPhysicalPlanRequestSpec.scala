@@ -39,8 +39,11 @@ import org.scalatest.matchers.should.Matchers
   */
 class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
 
-  /** Compile CSV scan -> group-by aggregate into a physical plan; return it and the aggregate id. */
-  private def compiledPlanAndViewOp(): (PhysicalPlan, String) = {
+  /**
+    * Compile CSV scan -> group-by aggregate into a physical plan; return it, the (non-terminal) CSV
+    * id, and the (terminal) aggregate id.
+    */
+  private def compiledPlanAndViewOp(): (PhysicalPlan, String, String) = {
     val csv = TestOperators.smallCsvScanOpDesc()
     val agg =
       TestOperators.aggregateAndGroupByDesc("Units Sold", AggregationFunction.SUM, List("Country"))
@@ -56,7 +59,7 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
         )
       )
       .physicalPlan
-    (plan, agg.operatorIdentifier.id)
+    (plan, csv.operatorIdentifier.id, agg.operatorIdentifier.id)
   }
 
   private def buildRequest(
@@ -78,7 +81,7 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
 
   "A WorkflowExecuteRequest carrying a PhysicalPlan" should
     "survive the websocket polymorphic JSON round-trip with the plan intact" in {
-    val (plan, aggId) = compiledPlanAndViewOp()
+    val (plan, _, aggId) = compiledPlanAndViewOp()
     val request: TexeraWebSocketRequest = buildRequest(plan, List(aggId))
 
     // Mirror WorkflowWebsocketResource: serialize via the polymorphic base ("type" discriminator),
@@ -99,7 +102,7 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
   }
 
   it should "carry the issuing user's JWT through the round-trip (forwarded on the CU's outbound calls)" in {
-    val (plan, aggId) = compiledPlanAndViewOp()
+    val (plan, _, aggId) = compiledPlanAndViewOp()
     val request: TexeraWebSocketRequest = buildRequest(plan, List(aggId), Some("jwt-abc-123"))
 
     val json = objectMapper.writeValueAsString(request)
@@ -118,17 +121,32 @@ class ClientPhysicalPlanRequestSpec extends AnyFlatSpec with Matchers {
     noToken.userJwtToken shouldBe None
   }
 
-  "outputPortsForViewResult" should "select exactly the to-view operators' non-internal output ports" in {
-    val (plan, aggId) = compiledPlanAndViewOp()
+  "outputPortsForViewResult" should "always include terminal operators' non-internal output ports" in {
+    // Plan is csv -> aggregate, so the aggregate is the terminal (end-of-path) operator.
+    val (plan, _, aggId) = compiledPlanAndViewOp()
 
-    val ports = WorkflowExecutionService.outputPortsForViewResult(plan, List(aggId))
-    ports should not be empty
-    ports.foreach(_.opId.logicalOpId shouldBe OperatorIdentity(aggId))
+    // Even with NO explicit to-view operators, the terminal operator's result is materialized
+    // (this is the fix: terminal/end-of-path results must be viewable without an eye-icon mark).
+    val terminalPorts = WorkflowExecutionService.outputPortsForViewResult(plan, List.empty)
+    terminalPorts should not be empty
+    terminalPorts.foreach(_.opId.logicalOpId shouldBe OperatorIdentity(aggId))
+    terminalPorts.foreach(_.portId.internal shouldBe false)
+
+    // An unknown to-view id adds nothing beyond the terminal ports.
+    WorkflowExecutionService.outputPortsForViewResult(plan, List("does-not-exist")) shouldBe terminalPorts
+    // Requesting the terminal op explicitly yields the same set (it's terminal anyway).
+    WorkflowExecutionService.outputPortsForViewResult(plan, List(aggId)) shouldBe terminalPorts
+  }
+
+  it should "union to-view (non-terminal) operators with the terminal ports" in {
+    val (plan, csvId, aggId) = compiledPlanAndViewOp()
+
+    // The CSV scan is upstream (non-terminal); explicitly viewing it adds its ports on top of the
+    // terminal aggregate's ports.
+    val ports = WorkflowExecutionService.outputPortsForViewResult(plan, List(csvId))
+    val viewedLogicalOps = ports.map(_.opId.logicalOpId)
+    viewedLogicalOps should contain(OperatorIdentity(csvId))
+    viewedLogicalOps should contain(OperatorIdentity(aggId))
     ports.foreach(_.portId.internal shouldBe false)
-
-    // No to-view operators -> no storage ports requested (terminal sinks are handled by the scheduler).
-    WorkflowExecutionService.outputPortsForViewResult(plan, List.empty) shouldBe empty
-    // An unknown operator id contributes nothing.
-    WorkflowExecutionService.outputPortsForViewResult(plan, List("does-not-exist")) shouldBe empty
   }
 }

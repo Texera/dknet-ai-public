@@ -53,6 +53,8 @@ case class PortResultUriRequest(globalPortId: String, uri: String)
 
 case class ResultUriResponse(uri: String)
 
+case class ResultUrisResponse(uris: List[String])
+
 case class LatestExecutionResponse(eid: Int)
 
 /**
@@ -146,6 +148,23 @@ class InternalExecutionMetadataResource {
       )
       .map(uri => ResultUriResponse(uri.toString))
       .getOrElse(throw new NotFoundException(s"No result URI found for execution $eid"))
+  }
+
+  // All stored result URIs for an execution. A no-DB computing unit uses this to discover which
+  // operators produced results (it only ever wrote them via POST /port-result), which drives the
+  // WebResultUpdateEvent that tells the frontend a result is viewable.
+  @GET
+  @Path("/{eid}/port-results")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def getResultUris(
+      @PathParam("eid") eid: Long,
+      @Auth user: SessionUser
+  ): ResultUrisResponse = {
+    ResultUrisResponse(
+      WorkflowExecutionsResource
+        .getResultUrisByExecutionId(ExecutionIdentity(eid))
+        .map(_.toString)
+    )
   }
 
   @GET

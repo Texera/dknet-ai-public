@@ -26,6 +26,7 @@ import org.apache.texera.amber.util.JSONUtils.objectMapper
 import java.net.{HttpURLConnection, URI, URL, URLEncoder}
 import java.nio.charset.StandardCharsets
 import scala.collection.concurrent.TrieMap
+import scala.jdk.CollectionConverters._
 
 /**
   * Routes execution-metadata operations to the dashboard service over HTTP, instead of querying
@@ -116,6 +117,17 @@ object RemoteExecutionMetadata {
     body.put("globalPortId", globalPortIdSerialized)
     body.put("uri", uri.toString)
     request(tokenFor(eid), "POST", s"/$eid/port-result", Some(body.toString))
+  }
+
+  /** All stored result URIs for an execution, used to discover which operators produced results. */
+  def getResultUrisByExecutionId(eid: Long): List[URI] = {
+    request(tokenFor(eid), "GET", s"/$eid/port-results", None)
+      .map { response =>
+        val urisNode = objectMapper.readTree(response).get("uris")
+        if (urisNode == null) List.empty[URI]
+        else urisNode.elements().asScala.map(node => new URI(node.asText())).toList
+      }
+      .getOrElse(List.empty)
   }
 
   def getResultUri(
