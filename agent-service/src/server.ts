@@ -20,14 +20,12 @@
 import { Elysia, t } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
 import { TexeraAgent } from "./agent/texera-agent";
 import { getVisibleResultHeaders } from "./agent/tools/tools-utility";
 import { getBackendConfig } from "./api/backend-api";
 import { extractUserFromToken, validateToken } from "./api/auth-api";
 import { retrieveWorkflow } from "./api/workflow-api";
 import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
-import { AgentSnapshotStore } from "./persistence/agent-snapshot-store";
 import { env } from "./config/env";
 import { createLogger } from "./logger";
 
@@ -46,78 +44,22 @@ import { OperatorResultSerializationMode } from "./types/agent";
 const agentStore = new Map<string, TexeraAgent>();
 let agentCounter = 0;
 
-// Lazily resolved from AGENT_STATE_DIR (read live so it can be configured or
-// overridden in tests without rebuilding the app). null = persistence disabled.
-let snapshotStore: AgentSnapshotStore | null | undefined;
-
-function getSnapshotStore(): AgentSnapshotStore | null {
-  if (snapshotStore === undefined) {
-    const dir = process.env.AGENT_STATE_DIR;
-    snapshotStore = dir ? new AgentSnapshotStore(dir) : null;
-    if (dir) log.info({ dir }, "agent state persistence enabled");
-  }
-  return snapshotStore;
-}
-
-// Persist the agent's current snapshot (debounced). No-op when persistence is off.
-function persistAgent(agentId: string): void {
-  const store = getSnapshotStore();
-  const agent = agentStore.get(agentId);
-  if (store && agent) {
-    store.scheduleSave(agent.toSnapshot());
-  }
-}
-
-function buildChatModel(modelType: string): LanguageModel {
-  const config = getBackendConfig();
-  // Reasoning effort variants are configured as separate model entries in litellm-config.yaml
-  // with extra_body to inject reasoning_effort, bypassing LiteLLM's param validation.
-  const openai = createOpenAI({
-    baseURL: `${config.modelsEndpoint}/api`,
-    apiKey: env.LLM_API_KEY,
-  });
-  return openai.chat(modelType);
-}
-
-/**
- * Reconstruct persisted agents into the in-memory store on startup. Returns the
- * number successfully rehydrated. Exposed for tests.
- */
-export async function rehydrateAgents(
-  store: AgentSnapshotStore,
-  buildModel: (modelType: string) => LanguageModel = buildChatModel
-): Promise<number> {
-  const snapshots = await store.loadAll();
-  let restored = 0;
-  for (const snapshot of snapshots) {
-    try {
-      const agent = new TexeraAgent({
-        model: buildModel(snapshot.modelType),
-        modelType: snapshot.modelType,
-        agentId: snapshot.agentId,
-        agentName: snapshot.agentName,
-        createdAt: new Date(snapshot.createdAt),
-      });
-      await agent.initialize();
-      agent.restoreFromSnapshot(snapshot);
-      agentStore.set(snapshot.agentId, agent);
-      restored++;
-    } catch (err) {
-      log.error({ err, agentId: snapshot.agentId }, "failed to rehydrate agent");
-    }
-  }
-  log.info({ restored, total: snapshots.length }, "rehydrated agents from disk");
-  return restored;
-}
-
 async function createAgentInstance(
   modelType: string,
   customName?: string
 ): Promise<{ agentId: string; agent: TexeraAgent }> {
   const agentId = `agent-${++agentCounter}`;
+  const config = getBackendConfig();
 
+  const openai = createOpenAI({
+    baseURL: `${config.modelsEndpoint}/api`,
+    apiKey: env.LLM_API_KEY,
+  });
+
+  // Reasoning effort variants are configured as separate model entries in litellm-config.yaml
+  // with extra_body to inject reasoning_effort, bypassing LiteLLM's param validation.
   const agent = new TexeraAgent({
-    model: buildChatModel(modelType),
+    model: openai.chat(modelType),
     modelType,
     agentId,
     agentName: customName || "Bob",
@@ -279,7 +221,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
         });
       }
 
-      persistAgent(agentId);
       return getAgentInfo(agentId, agent);
     },
     {
@@ -311,7 +252,7 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
     };
   })
 
-  .delete("/:id", async ({ params: { id }, set }) => {
+  .delete("/:id", ({ params: { id }, set }) => {
     const agent = agentStore.get(id);
     if (!agent) {
       set.status = 404;
@@ -320,7 +261,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
 
     agent.destroy();
     agentStore.delete(id);
-    await getSnapshotStore()?.remove(id);
     return { deleted: true };
   })
 
@@ -362,7 +302,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
   .post("/:id/clear", ({ params: { id } }) => {
     const agent = getAgent(id);
     agent.clearHistory();
-    persistAgent(id);
     return { status: "cleared" };
   })
 
@@ -385,7 +324,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       operatorResults: getOperatorResultSummaries(agent),
     });
 
-    persistAgent(id);
     return {
       status: "checked out",
       headId: stepId,
@@ -443,7 +381,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
         allowedOperatorTypes: settings.allowedOperatorTypes,
       });
 
-      persistAgent(id);
       const agentSettings = agent.getSettings();
       return {
         maxOperatorResultCharLimit: agentSettings.maxOperatorResultCharLimit,
@@ -647,9 +584,6 @@ export function buildApp() {
               operatorResults: getOperatorResultSummaries(agent),
             });
 
-            // Persist the conversation/workflow produced by this turn.
-            persistAgent(agentId);
-
             wsLog.info({ agentId, steps: result.messages.length }, "agent run complete");
           } catch (error: any) {
             agent.setStepCallback(null);
@@ -681,13 +615,6 @@ export function buildApp() {
 export function _resetAgentStoreForTests(): void {
   agentStore.clear();
   agentCounter = 0;
-  snapshotStore = undefined;
-}
-
-// Re-read AGENT_STATE_DIR on the next access; lets tests point persistence at a
-// fresh temp directory.
-export function _getSnapshotStoreForTests(): AgentSnapshotStore | null {
-  return getSnapshotStore();
 }
 
 export function _getAgentForTests(agentId: string): TexeraAgent | undefined {
@@ -748,16 +675,6 @@ async function initializeServices() {
 
 export async function start() {
   await initializeServices();
-
-  const store = getSnapshotStore();
-  if (store) {
-    try {
-      await rehydrateAgents(store);
-    } catch (error) {
-      log.error({ err: error }, "failed to rehydrate persisted agents");
-    }
-  }
-
   const app = buildApp().listen(env.PORT);
   printStartupMessage(app);
   return app;
