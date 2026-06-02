@@ -34,6 +34,7 @@ import {
   DASHBOARD_ADMIN_GMAIL,
   DASHBOARD_ADMIN_SETTINGS,
   DASHBOARD_ADMIN_USER,
+  DASHBOARD_USER_BIOMCP,
   DASHBOARD_USER_COMPUTING_UNIT,
   DASHBOARD_USER_DATASET,
   DASHBOARD_USER_DISCUSSION,
@@ -101,6 +102,7 @@ export class DashboardComponent implements OnInit {
     datasets_enabled: false,
     compute_enabled: false,
     cluster_enabled: false,
+    biomcp_enabled: false,
     quota_enabled: false,
     forum_enabled: false,
     about_enabled: false,
@@ -110,6 +112,7 @@ export class DashboardComponent implements OnInit {
   protected readonly DASHBOARD_USER_WORKFLOW = DASHBOARD_USER_WORKFLOW;
   protected readonly DASHBOARD_USER_DATASET = DASHBOARD_USER_DATASET;
   protected readonly DASHBOARD_USER_COMPUTING_UNIT = DASHBOARD_USER_COMPUTING_UNIT;
+  protected readonly DASHBOARD_USER_BIOMCP = DASHBOARD_USER_BIOMCP;
   protected readonly DASHBOARD_USER_QUOTA = DASHBOARD_USER_QUOTA;
   protected readonly DASHBOARD_USER_DISCUSSION = DASHBOARD_USER_DISCUSSION;
   protected readonly DASHBOARD_ADMIN_USER = DASHBOARD_ADMIN_USER;

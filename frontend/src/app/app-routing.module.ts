@@ -25,6 +25,7 @@ import { UserQuotaComponent } from "./dashboard/component/user/user-quota/user-q
 import { UserProjectSectionComponent } from "./dashboard/component/user/user-project/user-project-section/user-project-section.component";
 import { UserProjectComponent } from "./dashboard/component/user/user-project/user-project.component";
 import { UserComputingUnitComponent } from "./dashboard/component/user/user-computing-unit/user-computing-unit.component";
+import { UserBiomcpComponent } from "./dashboard/component/user/user-biomcp/user-biomcp.component";
 import { ClusterComponent } from "./dashboard/component/user/cluster/cluster.component";
 import { WorkspaceComponent } from "./workspace/component/workspace.component";
 import { AboutComponent } from "./hub/component/about/about.component";
@@ -144,6 +145,10 @@ routes.push({
             {
               path: "compute",
               component: UserComputingUnitComponent,
+            },
+            {
+              path: "biomcp",
+              component: UserBiomcpComponent,
             },
             {
               path: "cluster",

@@ -81,6 +81,11 @@ postgresql:
       requests:
         cpu: "1"
         memory: "1Gi"
+    pdb:
+      create: true
+      minAvailable: 1
+    podAnnotations:
+      karpenter.sh/do-not-disrupt: "true"
     persistence:
       enabled: true
       size: 10Gi
@@ -127,6 +132,22 @@ lakefs:
         secretKeyRef:
           name: texera-s3-credentials
           key: secret-access-key
+
+# ---------------------------------------------------------------------
+# Scheduling for always-on core services.
+#
+# When set, every always-on Texera service (webserver, microservices,
+# litellm, agent, cloudmapper) gets these nodeSelector + tolerations so it
+# pins to a dedicated node pool and stays isolated from on-demand CU pods.
+# Pair with the `core-services` Karpenter NodePool
+# (bin/k8s/utils/core-services-nodepool.yaml). Postgres and lakefs are pinned
+# separately via their subchart values (postgresql.primary.* / lakefs.*).
+#
+# Empty by default => no pinning (local / non-EKS deployments are unaffected).
+# ---------------------------------------------------------------------
+coreServices:
+  nodeSelector: {}
+  tolerations: []
 
 # Part2: configurations of Texera-related micro services
 texeraImages:

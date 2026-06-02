@@ -1,0 +1,78 @@
+kubectl port-forward -n texera-dev service/texera-ingress-nginx-controller 30080:80
+OR
+kubectl port-forward -n envoy-gateway-system service/$(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=texera-gateway -o jsonpath='{.items[0].metadata.name}') 30080:80
+
+kubectl port-forward -n texera-dev service/texera-minio 31000:9000
+
+kubectl port-forward -n texera-dev deployment/texera-webserver 8080:8080
+
+docker build -f bin/config-service.dockerfile -t alirisheh876/texera-config-service:xuan .
+
+kubectl rollout restart deployment permission-service -n texera-dev
+
+helm install texera k8s --namespace texera-dev --create-namespace -f k8s/override-local.yaml
+helm uninstall texera --namespace texera-dev
+
+## Add envoy gateway
+helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.6.3 -n envoy-gateway-system --create-namespace --set config.envoyGateway.extensionApis.enableEnvoyPatchPolicy=true
+
+## Update Docker imagea@g.com
+kubectl rollout restart deployment/texera-config-service --namespace texera-dev
+kubectl rollout restart deployment/texera-workflow-computing-unit-manager --namespace texera
+
+# Apply Helm chart updates to fix large file export issue
+helm upgrade texera k8s  --namespace texera-dev
+
+# Check pods status
+kubectl get pods -n texera-dev
+
+# Check logs from the file service for export issues
+kubectl logs -f $(kubectl get pods -n texera-dev -l app=texera-lakefs -o jsonpath='{.items[0].metadata.name}') -n texera-dev
+
+# Check logs from the computing unit manager for export issues
+kubectl logs -f $(kubectl get pods -n texera-dev -l app=texera-workflow-computing-unit-manager -o jsonpath='{.items[0].metadata.name}') -n texera-dev
+
+# Check if the envoy proxy is correctly configured
+kubectl describe configmap envoy-config -n texera-dev
+
+# Apply changes to the computing unit namespace
+kubectl apply -f workflow-computing-units-config.yaml -n texera-workflow-computing-unit-pool
+
+# Restart computing unit pods after config changes
+kubectl delete pods -n texera-workflow-computing-unit-pool --all
+
+helm upgrade texera texera/deployment/k8s/texera-helmchart -n texera -f hub-override.yaml
+
+
+
+############################################
+CONTAINERD
+############################################
+
+Bootstrap / cloud-init
+  sudo tail -f /var/log/cu-bootstrap.log        # live userdata progress
+  sudo cloud-init status --wait                  # blocks until userdata finishes
+  sudo cloud-init status --long                  # shows errors if userdata failed
+
+  containerd
+  sudo systemctl status containerd --no-pager
+  sudo ctr version
+  sudo ctr image ls | grep computing-unit-master  # image present?
+  sudo ctr --namespace default image ls           # same, explicit namespace
+
+  CU master container (managed by cu-master.service)
+  sudo systemctl status cu-master --no-pager
+  sudo journalctl -u cu-master -f                 # live logs (Scala / Dropwizard output)
+  sudo ctr task ls                                # should show cu-master RUNNING
+  sudo ctr task metrics cu-master                 # CPU / memory
+  cat /etc/cu-master/env                          # env vars passed to the container
+  cat /usr/local/bin/cu-master-run                # the wrapper systemd runs
+
+  Listen port / connectivity
+  ss -ltnp | grep 8085                            # cu-master binds 0.0.0.0:8085
+  curl -sI http://127.0.0.1:8085/                 # expect 404 (proves Jetty is up)
+  curl -s http://18.209.213.109:5432 -m 2; echo   # can it reach texera-host services?
+
+  Restart the CU (if you change env / re-pull)
+  sudo systemctl restart cu-master
+  sudo ctr image pull docker.io/alirisheh876/computing-unit-master:remote-cu-amd64

@@ -101,6 +101,25 @@ spec:
       backendRefs:
         - name: python-language-server-svc
           port: 3000
+    # BioMCP session pods are surfaced under /biomcp/{cuid}/... at the
+    # gateway. Access-control-service hosts the per-session forward proxy
+    # (auth via JWT in ?access-token / Authorization / biomcp_jwt cookie),
+    # but its Jersey URL pattern is /api/*, so we prefix the path with
+    # /api before sending upstream. The rewritten match is just the
+    # PathPrefix /biomcp.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /biomcp
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/biomcp
+      backendRefs:
+        - name: texera-{{ .Values.accessControlService.name }}-svc
+          port: {{ .Values.accessControlService.service.port }}
     - matches:
         - path:
             type: PathPrefix

@@ -7,6 +7,14 @@ metadata:
     app: cloudmapper
 spec:
   replicas: {{ .Values.cloudmapper.replicas | default 1 }}
+  # maxSurge 0: the pod mounts a RWO EBS PVC, so a new pod can't attach the
+  # volume until the old one is gone. Surging a second pod deadlocks on
+  # multi-attach; with maxSurge 0 the old pod is removed before the new starts.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: cloudmapper
@@ -82,6 +90,13 @@ spec:
               subPath: config.yaml
       nodeSelector:
         kubernetes.io/arch: amd64
+        {{- with .Values.coreServices.nodeSelector }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.coreServices.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 
 ---
 apiVersion: v1

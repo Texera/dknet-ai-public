@@ -123,6 +123,18 @@
             <span>CloudBioMapper Clusters</span>
           </li>
           <li
+            *ngIf="sidebarTabs.biomcp_enabled"
+            nz-menu-item
+            nz-tooltip="Manage BioMCP chat sessions"
+            nzMatchRouter="true"
+            nzTooltipPlacement="right"
+            [routerLink]="DASHBOARD_USER_BIOMCP">
+            <span
+              nz-icon
+              nzType="robot"></span>
+            <span>BioMCP</span>
+          </li>
+          <li
             *ngIf="sidebarTabs.quota_enabled"
             nz-menu-item
             nz-tooltip="Quota information"

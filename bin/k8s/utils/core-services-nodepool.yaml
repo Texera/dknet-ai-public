@@ -1,0 +1,69 @@
+# Dedicated Karpenter NodePool for Texera core services (EKS Auto Mode).
+#
+# Purpose: keep always-on control-plane services (Postgres, webserver, Envoy
+# gateway, microservices, lakefs, etc.) on a single large, stable node that is
+# isolated from on-demand Computing-Unit (CU) workloads. This prevents two
+# failure modes that took down dknet-ai.org:
+#   1. A large CU pod co-locating with the database and OOM-ing the node.
+#   2. Karpenter consolidation draining the node that hosts the database.
+#
+# Mechanics:
+#   - The taint `texera.io/core-services:NoSchedule` repels everything that
+#     does not explicitly tolerate it, so CUs / warm-pool pods never land here.
+#   - Core services carry a matching toleration + nodeSelector
+#     (texera.io/node-role=core-services) so they pin to this pool.
+#   - Instance types are restricted to the 16 vCPU / 64 GiB m-family, giving
+#     core services (~6 vCPU / 17 GiB in use) large headroom to "tolerate much
+#     more".
+#   - Pinned to us-west-1a: the Postgres EBS volume (vol-...b5c2d) and the NLB
+#     EIP both live there, and EBS volumes can only attach within their AZ.
+#   - consolidationPolicy WhenEmpty + the longest expireAfter EKS Auto Mode
+#     allows (480h; EKS caps expireAfter + terminationGracePeriod at 21 days,
+#     and forbids "Never") => the node is recycled at most once every ~20 days,
+#     and even then the Postgres PDB + do-not-disrupt annotation gate the move.
+#
+# Apply directly (not part of the Helm chart):
+#   kubectl --context admin@dknet.us-west-1.eksctl.io apply -f bin/k8s/utils/core-services-nodepool.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: core-services
+spec:
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 1h
+  template:
+    metadata:
+      labels:
+        texera.io/node-role: core-services
+    spec:
+      expireAfter: 480h
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: default
+      taints:
+        - key: texera.io/core-services
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-1a"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+            - m6a.4xlarge
+            - m7a.4xlarge
+            - m5.4xlarge
+            - m5a.4xlarge
+            - m6i.4xlarge
+            - m7i.4xlarge

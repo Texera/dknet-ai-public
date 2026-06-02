@@ -38,6 +38,14 @@ object KubernetesClient {
     s"${generatePodName(cuid)}.${KubernetesConfig.computeUnitServiceName}.$namespace.svc.cluster.local:${KubernetesConfig.computeUnitPortNumber}"
   }
 
+  // BioMCP pods share the headless service (so the per-pod DNS record still
+  // resolves) but listen on a different container port. We expose this URI
+  // separately so the access-control proxy can target port 3000 instead of the
+  // default CU master port.
+  def generateBioMcpPodURI(cuid: Int): String = {
+    s"${generatePodName(cuid)}.${KubernetesConfig.computeUnitServiceName}.$namespace.svc.cluster.local:${KubernetesConfig.biomcpPortNumber}"
+  }
+
   def generatePodName(cuid: Int): String = s"$podNamePrefix-$cuid"
 
   def podExists(cuid: Int): Boolean = {
@@ -170,6 +178,75 @@ object KubernetesClient {
     }
 
     val pod = specBuilder
+      .withHostname(podName)
+      .withSubdomain(KubernetesConfig.computeUnitServiceName)
+      .endSpec()
+      .build()
+
+    client.resource(pod).inNamespace(namespace).create()
+  }
+
+  // Launch a BioMCP session pod. Pinned at the configured CPU/memory because
+  // the BioMCP webapp has a known footprint and we don't expose sliders to
+  // the user. Keeps the `type: computing-unit` label so the headless service
+  // still publishes DNS for the pod (subdomain lookup), and adds `kind: biomcp`
+  // for inspection/log queries. The OpenAI key/model and the auth toggles are
+  // injected from server-side config so the user supplies nothing: the webapp's
+  // own auth (registration/login) and its user-provided-key prompt are both
+  // disabled, and Texera's access-control proxy enforces per-session ownership.
+  def createBioMcpPod(cuid: Int): Pod = {
+    val podName = generatePodName(cuid)
+    if (getPodByName(podName).isDefined) {
+      throw new Exception(s"Pod with cuid $cuid already exists")
+    }
+
+    // OPENAI_API_KEY is only set when configured; the upstream image fails fast
+    // on its own if it's missing, which surfaces as a pod crash the UI reports.
+    val envList = (
+      Option(KubernetesConfig.biomcpOpenaiApiKey)
+        .filter(_.trim.nonEmpty)
+        .map(key => new EnvVarBuilder().withName("OPENAI_API_KEY").withValue(key).build())
+        .toList
+        ++ List(
+          new EnvVarBuilder()
+            .withName("OPENAI_MODEL")
+            .withValue(KubernetesConfig.biomcpOpenaiModel)
+            .build(),
+          new EnvVarBuilder()
+            .withName("APP_AUTH_ENABLED")
+            .withValue(KubernetesConfig.biomcpAppAuthEnabled)
+            .build(),
+          new EnvVarBuilder()
+            .withName("USER_PROVIDED_KEYS_ENABLED")
+            .withValue(KubernetesConfig.biomcpUserProvidedKeysEnabled)
+            .build()
+        )
+    ).asJava
+
+    val resourceBuilder = new ResourceRequirementsBuilder()
+      .addToLimits("cpu", new Quantity(KubernetesConfig.biomcpCpuLimit))
+      .addToLimits("memory", new Quantity(KubernetesConfig.biomcpMemoryLimit))
+
+    val pod = new PodBuilder()
+      .withNewMetadata()
+      .withName(podName)
+      .withNamespace(namespace)
+      .addToLabels("type", "computing-unit")
+      .addToLabels("kind", "biomcp")
+      .addToLabels("cuid", cuid.toString)
+      .addToLabels("name", podName)
+      .endMetadata()
+      .withNewSpec()
+      .addNewContainer()
+      .withName("biomcp")
+      .withImage(KubernetesConfig.biomcpImageName)
+      .withImagePullPolicy(KubernetesConfig.computingUnitImagePullPolicy)
+      .addNewPort()
+      .withContainerPort(KubernetesConfig.biomcpPortNumber)
+      .endPort()
+      .withEnv(envList)
+      .withResources(resourceBuilder.build())
+      .endContainer()
       .withHostname(podName)
       .withSubdomain(KubernetesConfig.computeUnitServiceName)
       .endSpec()

@@ -1,0 +1,104 @@
+<div class="biomcp-page">
+  <div class="header">
+    <div>
+      <h2>BioMCP Sessions</h2>
+      <p class="subtitle">
+        Each session runs the
+        <code>acaciaresearch/biomcp</code>
+        chat web app in its own pod (2 CPU / 4 GiB). The OpenAI key is provided
+        server-side, so just give the session a name and open it — no token or
+        sign-in needed.
+      </p>
+    </div>
+    <div class="actions">
+      <button
+        nz-button
+        nzType="default"
+        (click)="refresh()"
+        [disabled]="loading">
+        <span
+          nz-icon
+          nzType="reload"></span>
+        Refresh
+      </button>
+      <button
+        nz-button
+        nzType="primary"
+        (click)="openCreateModal()">
+        <span
+          nz-icon
+          nzType="plus"></span>
+        New session
+      </button>
+    </div>
+  </div>
+
+  <div
+    *ngIf="!loading && sessions.length === 0"
+    class="empty">
+    <nz-empty nzNotFoundContent="No BioMCP sessions yet — click 'New session' to create one."></nz-empty>
+  </div>
+
+  <div class="session-grid">
+    <nz-card
+      *ngFor="let unit of sessions"
+      [nzTitle]="cardTitle"
+      class="session-card">
+      <ng-template #cardTitle>
+        <span class="session-name">{{ unit.computingUnit.name }}</span>
+        <nz-tag
+          [nzColor]="statusColor(unit.status)"
+          class="status-tag">{{ unit.status }}</nz-tag>
+      </ng-template>
+
+      <div class="meta">
+        <div><strong>cuid:</strong> {{ unit.computingUnit.cuid }}</div>
+        <div><strong>Created:</strong> {{ unit.computingUnit.creationTime | date: "medium" }}</div>
+      </div>
+
+      <div class="card-actions">
+        <button
+          nz-button
+          nzType="primary"
+          [disabled]="unit.status !== 'Running'"
+          (click)="openSession(unit)">
+          <span
+            nz-icon
+            nzType="export"></span>
+          Open
+        </button>
+        <button
+          nz-button
+          nzDanger
+          (click)="terminate(unit)">
+          <span
+            nz-icon
+            nzType="delete"></span>
+          Terminate
+        </button>
+      </div>
+    </nz-card>
+  </div>
+</div>
+
+<nz-modal
+  [(nzVisible)]="createModalOpen"
+  nzTitle="New BioMCP session"
+  [nzOkText]="creating ? 'Creating…' : 'Create'"
+  [nzOkLoading]="creating"
+  (nzOnCancel)="cancelCreate()"
+  (nzOnOk)="submitCreate()">
+  <ng-container *nzModalContent>
+    <div class="form-row">
+      <label>Session name</label>
+      <input
+        nz-input
+        type="text"
+        [(ngModel)]="newName"
+        placeholder="e.g. demo-session" />
+      <p class="hint">
+        The OpenAI key is configured server-side — no token needed. Pinned resources: 2 CPU / 4 GiB.
+      </p>
+    </div>
+  </ng-container>
+</nz-modal>

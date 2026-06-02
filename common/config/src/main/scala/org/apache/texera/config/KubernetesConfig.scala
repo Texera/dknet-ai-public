@@ -66,4 +66,21 @@ object KubernetesConfig {
 
   // GPU resource key used directly in Kubernetes resource specifications
   val gpuResourceKey: String = conf.getString("kubernetes.computing-unit-gpu-resource-key")
+
+  // BioMCP session pod settings. CPU/memory are fixed (not user-selectable)
+  // because the BioMCP webapp has a known footprint; the port differs from a
+  // regular CU because BioMCP serves the chat UI on /app.
+  val biomcpImageName: String = conf.getString("kubernetes.biomcp-image-name")
+  val biomcpPortNumber: Int = conf.getInt("kubernetes.biomcp-port-num")
+  val biomcpCpuLimit: String = conf.getString("kubernetes.biomcp-cpu-limit")
+  val biomcpMemoryLimit: String = conf.getString("kubernetes.biomcp-memory-limit")
+
+  // Baked-in OpenAI settings injected into BioMCP pods. The API key is a
+  // secret supplied via KUBERNETES_BIOMCP_OPENAI_API_KEY; the rest disable the
+  // webapp's own auth and user-provided-key prompt so users supply nothing.
+  val biomcpOpenaiApiKey: String = conf.getString("kubernetes.biomcp-openai-api-key")
+  val biomcpOpenaiModel: String = conf.getString("kubernetes.biomcp-openai-model")
+  val biomcpAppAuthEnabled: String = conf.getString("kubernetes.biomcp-app-auth-enabled")
+  val biomcpUserProvidedKeysEnabled: String =
+    conf.getString("kubernetes.biomcp-user-provided-keys-enabled")
 }

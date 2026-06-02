@@ -24,9 +24,12 @@ export interface WorkflowComputingUnitResourceLimit {
   jvmMemorySize: string;
   shmSize: string;
   nodeAddresses: string[];
+  // Only present for BioMCP-type units; surfaced back to the owner via the
+  // "Reveal token" affordance on the BioMCP sessions page.
+  webAppToken?: string;
 }
 
-export type WorkflowComputingUnitType = "local" | "kubernetes" | "aws";
+export type WorkflowComputingUnitType = "local" | "kubernetes" | "aws" | "biomcp";
 
 export interface WorkflowComputingUnit {
   cuid: number;

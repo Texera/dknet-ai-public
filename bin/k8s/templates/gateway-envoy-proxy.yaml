@@ -19,14 +19,27 @@ spec:
           {{- if .Values.gatewayConfig.loadBalancer.subnetId }}
           service.beta.kubernetes.io/aws-load-balancer-subnets: {{ .Values.gatewayConfig.loadBalancer.subnetId }}
           {{- end }}
-      {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
-      # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
-      # live in the AZs the LB is provisioned in; with a single EIP we have
-      # only one AZ enabled, so out-of-zone proxy pods become un-routable.
+      {{- if or .Values.gatewayConfig.loadBalancer.availabilityZone .Values.coreServices.nodeSelector .Values.coreServices.tolerations }}
+      # Pin envoy-proxy pods to the NLB's AZ (NLBs only register targets in the
+      # AZs they're provisioned in; a single EIP enables one AZ, so out-of-zone
+      # proxy pods become un-routable) and to the core-services node pool, so
+      # the ingress proxy is isolated from CU churn like the rest of the control
+      # plane.
       envoyDeployment:
         pod:
+          {{- if or .Values.gatewayConfig.loadBalancer.availabilityZone .Values.coreServices.nodeSelector }}
           nodeSelector:
+            {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
             topology.kubernetes.io/zone: {{ .Values.gatewayConfig.loadBalancer.availabilityZone | quote }}
+            {{- end }}
+            {{- with .Values.coreServices.nodeSelector }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.coreServices.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
       {{- end }}
 {{- end }}
 {{- end }}

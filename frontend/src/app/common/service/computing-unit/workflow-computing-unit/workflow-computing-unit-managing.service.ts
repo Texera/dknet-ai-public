@@ -84,11 +84,12 @@ export class WorkflowComputingUnitManagingService {
     jvmMemorySize: string,
     shmSize: string,
     uri: string,
-    unitType: "kubernetes" | "local" | "aws",
+    unitType: "kubernetes" | "local" | "aws" | "biomcp",
     awsAccessKeyId?: string,
     awsSecretAccessKey?: string,
     awsRegion?: string,
-    awsInstanceType?: string
+    awsInstanceType?: string,
+    webAppToken?: string
   ): Observable<DashboardWorkflowComputingUnit> {
     const body: Record<string, string | undefined> = {
       name,
@@ -103,11 +104,21 @@ export class WorkflowComputingUnitManagingService {
       awsSecretAccessKey,
       awsRegion,
       awsInstanceType,
+      webAppToken,
     };
 
     return this.http
       .post<DashboardWorkflowComputingUnit>(`${AppSettings.getApiEndpoint()}/${COMPUTING_UNIT_CREATE_URL}`, body)
       .pipe(map(raw => this.parseDashboardUnit(raw)));
+  }
+
+  /**
+   * Create a BioMCP session pod. CPU/memory are fixed server-side (2 cores /
+   * 4 GiB) and the OpenAI key/model + auth toggles are injected into the pod
+   * from server-side config, so the user supplies nothing beyond a name.
+   */
+  public createBioMcpComputingUnit(name: string): Observable<DashboardWorkflowComputingUnit> {
+    return this.createComputingUnit(name, "NaN", "NaN", "NaN", "NaN", "NaN", "", "biomcp");
   }
 
   /**

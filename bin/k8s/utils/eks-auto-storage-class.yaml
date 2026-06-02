@@ -1,5 +1,5 @@
 # StorageClass for EKS Auto Mode's managed EBS CSI driver.
-# Apply before `helm install` with override-eks.yaml:
+# Apply before `helm install` with override-eks_DEPRECATED.yaml:
 #   kubectl apply -f bin/k8s/utils/eks-auto-storage-class.yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass

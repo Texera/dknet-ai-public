@@ -379,6 +379,17 @@ export const unitTypeMessageTemplate = {
     terminateFailure: "Failed to terminate AWS EC2 computing unit",
     terminateTooltip: "Terminate this EC2 instance",
   },
+  biomcp: {
+    createTitle: "Create BioMCP Session",
+    terminateTitle: "Terminate BioMCP Session",
+    terminateWarning:
+      "<p style='color: #ff4d4f;'><strong>Warning:</strong> The BioMCP pod will be deleted and the session will no longer be reachable.</p>",
+    createSuccess: "Successfully created the BioMCP session",
+    createFailure: "Failed to create the BioMCP session",
+    terminateSuccess: "Terminated BioMCP session",
+    terminateFailure: "Failed to terminate BioMCP session",
+    terminateTooltip: "Terminate this BioMCP session",
+  },
 } as const;
 
 // User-facing label for the computing-unit type dropdown. Kept separate
@@ -388,6 +399,7 @@ const COMPUTING_UNIT_TYPE_LABELS: Record<string, string> = {
   kubernetes: "Free",
   local: "Local",
   aws: "AWS",
+  biomcp: "BioMCP",
 };
 
 export function computingUnitTypeLabel(type: string): string {
@@ -395,9 +407,10 @@ export function computingUnitTypeLabel(type: string): string {
 }
 
 export function isComputingUnitTypeSelectable(type: string): boolean {
-  // AWS path is hidden from end-users for now; entries still render so the
-  // option remains discoverable but cannot be picked.
-  return type !== "aws";
+  // AWS and BioMCP paths are not selectable from the generic compute-unit
+  // dropdown — AWS is hidden from end-users, BioMCP has its own dashboard
+  // page that drives creation with a fixed resource profile.
+  return type !== "aws" && type !== "biomcp";
 }
 
 // Friendly label for each creation-status phase emitted by the manager

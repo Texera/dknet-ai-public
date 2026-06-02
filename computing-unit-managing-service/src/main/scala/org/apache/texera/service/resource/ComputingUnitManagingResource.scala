@@ -136,7 +136,11 @@ object ComputingUnitManagingResource {
       awsAccessKeyId: Option[String] = None,
       awsSecretAccessKey: Option[String] = None,
       awsRegion: Option[String] = None,
-      awsInstanceType: Option[String] = None
+      awsInstanceType: Option[String] = None,
+      // BioMCP sessions: user-supplied chat-app token. Forwarded to the pod
+      // as WEB_APP_TOKEN and also stashed in resource JSON so the owner can
+      // re-reveal it from the dashboard if they forget.
+      webAppToken: Option[String] = None
   )
 
   case class WorkflowComputingUnitTerminateParams(
@@ -289,6 +293,9 @@ class ComputingUnitManagingResource {
       case "local"      => ComputingUnitConfig.localComputingUnitEnabled
       case "kubernetes" => KubernetesConfig.kubernetesComputingUnitEnabled
       case "aws"        => AwsEc2Config.awsEc2Enabled
+      // BioMCP sessions run as fixed-size pods in the same k8s pool as regular
+      // CUs, so they're gated on the same kubernetes-enabled flag.
+      case "biomcp"     => KubernetesConfig.kubernetesComputingUnitEnabled
       case _            => false // Any unknown types are disabled by default
     }
   }
@@ -299,8 +306,10 @@ class ComputingUnitManagingResource {
       case WorkflowComputingUnitTypeEnum.local =>
         Running
 
-      // ── Kubernetes CUs – only explicit "Running" counts as running ─
-      case WorkflowComputingUnitTypeEnum.kubernetes =>
+      // ── Kubernetes & BioMCP CUs – only explicit "Running" counts ────
+      // Both run as pods in the CU pool, so the same phase-from-pod check
+      // applies.
+      case WorkflowComputingUnitTypeEnum.kubernetes | WorkflowComputingUnitTypeEnum.biomcp =>
         val phaseOpt = KubernetesClient
           .getPodByName(KubernetesClient.generatePodName(unit.getCuid))
           .map(_.getStatus.getPhase)
@@ -321,7 +330,7 @@ class ComputingUnitManagingResource {
     unit.getType match {
       case WorkflowComputingUnitTypeEnum.local =>
         WorkflowComputingUnitMetrics("NaN", "NaN")
-      case WorkflowComputingUnitTypeEnum.kubernetes =>
+      case WorkflowComputingUnitTypeEnum.kubernetes | WorkflowComputingUnitTypeEnum.biomcp =>
         val metrics = KubernetesClient.getPodMetrics(unit.getCuid)
         WorkflowComputingUnitMetrics(
           metrics.getOrElse("cpu", ""),
@@ -340,15 +349,15 @@ class ComputingUnitManagingResource {
     unit.getType match {
       case WorkflowComputingUnitTypeEnum.local =>
         WorkflowComputingUnitResourceLimit("NaN", "NaN", "NaN")
-      case WorkflowComputingUnitTypeEnum.kubernetes =>
+      case WorkflowComputingUnitTypeEnum.kubernetes | WorkflowComputingUnitTypeEnum.biomcp =>
         val podLimits: Map[String, String] = KubernetesClient.getPodLimits(unit.getCuid)
 
         // Get GPU value by finding the exact configured resource key
         val gpuValue = podLimits.getOrElse(KubernetesConfig.gpuResourceKey, "0")
 
         WorkflowComputingUnitResourceLimit(
-          podLimits("cpu"),
-          podLimits("memory"),
+          podLimits.getOrElse("cpu", "NaN"),
+          podLimits.getOrElse("memory", "NaN"),
           gpuValue
         )
       case WorkflowComputingUnitTypeEnum.aws =>
@@ -472,6 +481,11 @@ class ComputingUnitManagingResource {
         if (param.uri.forall(_.trim.isEmpty))
           throw new ForbiddenException("URI is required for local computing units")
 
+      // BioMCP-specific checks: nothing is required from the user. CPU/RAM/image
+      // are pinned server-side and the OpenAI key/model + auth toggles are
+      // injected at pod-launch time from config.
+      case WorkflowComputingUnitTypeEnum.biomcp => // no user-supplied input
+
       // AWS-specific checks
       case WorkflowComputingUnitTypeEnum.aws =>
         if (param.awsAccessKeyId.forall(_.trim.isEmpty))
@@ -529,6 +543,22 @@ class ComputingUnitManagingResource {
               "shmSize" -> "NaN",
               // user-supplied URI goes straight in
               "nodeAddresses" -> Json.arr(param.uri.get)
+            )
+          )
+
+        // ── BioMCP session ──────────────────────────────────────
+        // CPU/RAM are pinned by config (not user-selectable). No secrets are
+        // stored here: the OpenAI key/model and auth toggles are injected into
+        // the pod from config at launch time, not persisted per-session.
+        case WorkflowComputingUnitTypeEnum.biomcp =>
+          Json.stringify(
+            Json.obj(
+              "cpuLimit" -> KubernetesConfig.biomcpCpuLimit,
+              "memoryLimit" -> KubernetesConfig.biomcpMemoryLimit,
+              "gpuLimit" -> "0",
+              "jvmMemorySize" -> "NaN",
+              "shmSize" -> "NaN",
+              "nodeAddresses" -> Json.arr() // filled in after pod create
             )
           )
 
@@ -611,6 +641,32 @@ class ComputingUnitManagingResource {
           case e: KubernetesClientException =>
             throw ComputingUnitManagingServiceException.fromKubernetes(e)
 
+          case t: Throwable =>
+            throw t
+        }
+      }
+
+      // ── BioMCP pod launch ────────────────────────────────────────
+      if (cuType == WorkflowComputingUnitTypeEnum.biomcp && insertedUnit != null) {
+        // BioMCP pods listen on port 3000 (the chat webapp's `/app`), so we
+        // store the per-pod URI with that port. The access-control proxy uses
+        // this URI to forward gateway-side `/biomcp/{cuid}/...` traffic.
+        insertedUnit.setUri(KubernetesClient.generateBioMcpPodURI(cuid))
+
+        val updatedResource: JsObject =
+          Json
+            .parse(insertedUnit.getResource)
+            .as[JsObject] ++
+            Json.obj("nodeAddresses" -> Json.arr(insertedUnit.getUri))
+
+        insertedUnit.setResource(Json.stringify(updatedResource))
+        wcDao.update(insertedUnit)
+
+        try {
+          KubernetesClient.createBioMcpPod(cuid)
+        } catch {
+          case e: KubernetesClientException =>
+            throw ComputingUnitManagingServiceException.fromKubernetes(e)
           case t: Throwable =>
             throw t
         }
@@ -785,7 +841,8 @@ class ComputingUnitManagingResource {
         // Only check pod existence for Kubernetes units (AWS units can't be
         // checked without credentials, local units don't have pods)
         if (
-          unit.getType == WorkflowComputingUnitTypeEnum.kubernetes &&
+          (unit.getType == WorkflowComputingUnitTypeEnum.kubernetes ||
+            unit.getType == WorkflowComputingUnitTypeEnum.biomcp) &&
           !KubernetesClient.podExists(unit.getCuid)
         ) {
           unit.setTerminateTime(new Timestamp(System.currentTimeMillis()))
@@ -804,7 +861,8 @@ class ComputingUnitManagingResource {
         .filter {
           case (unit, _) =>
             unit.getType match {
-              case WorkflowComputingUnitTypeEnum.kubernetes =>
+              case WorkflowComputingUnitTypeEnum.kubernetes |
+                  WorkflowComputingUnitTypeEnum.biomcp =>
                 KubernetesClient.podExists(unit.getCuid)
               case _ => true
             }
@@ -901,7 +959,7 @@ class ComputingUnitManagingResource {
       val unit = getComputingUnitByCuid(ctx, cuid)
 
       unit.getType match {
-        case WorkflowComputingUnitTypeEnum.kubernetes =>
+        case WorkflowComputingUnitTypeEnum.kubernetes | WorkflowComputingUnitTypeEnum.biomcp =>
           KubernetesClient.deletePod(cuid)
 
         case WorkflowComputingUnitTypeEnum.aws =>
@@ -1043,7 +1101,7 @@ class ComputingUnitManagingResource {
     }
     val unit = getComputingUnitByCuid(context, cuid)
     unit.getType match {
-      case WorkflowComputingUnitTypeEnum.kubernetes =>
+      case WorkflowComputingUnitTypeEnum.kubernetes | WorkflowComputingUnitTypeEnum.biomcp =>
         val (phase, message) = KubernetesClient.getCreationPhase(cuid)
         Map("phase" -> phase, "message" -> message)
       case WorkflowComputingUnitTypeEnum.local =>

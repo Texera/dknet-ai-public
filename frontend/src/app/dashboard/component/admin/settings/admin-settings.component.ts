@@ -71,6 +71,7 @@ export class AdminSettingsComponent implements OnInit {
     compute_enabled: false,
     datasets_enabled: false,
     cluster_enabled: false,
+    biomcp_enabled: false,
     quota_enabled: false,
     forum_enabled: false,
     about_enabled: false,

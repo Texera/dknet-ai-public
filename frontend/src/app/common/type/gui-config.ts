@@ -56,6 +56,7 @@ export interface SidebarTabs {
   compute_enabled: boolean;
   datasets_enabled: boolean;
   cluster_enabled: boolean;
+  biomcp_enabled: boolean;
   quota_enabled: boolean;
   forum_enabled: boolean;
   about_enabled: boolean;
