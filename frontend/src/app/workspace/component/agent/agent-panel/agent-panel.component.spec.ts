@@ -18,6 +18,7 @@
  */
 
 import { Subject, of } from "rxjs";
+import { SimpleChange } from "@angular/core";
 
 import { AgentPanelComponent } from "./agent-panel.component";
 import { AgentService } from "../../../service/agent/agent.service";
@@ -25,6 +26,7 @@ import { AgentService } from "../../../service/agent/agent.service";
 describe("AgentPanelComponent", () => {
   let component: AgentPanelComponent;
   let agentService: Partial<AgentService>;
+  let requestAnimationFrameSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     localStorage.clear();
@@ -35,6 +37,14 @@ describe("AgentPanelComponent", () => {
       deactivateAgent: vi.fn(),
     } as Partial<AgentService>;
     component = new AgentPanelComponent(agentService as AgentService);
+    requestAnimationFrameSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => {
+      callback(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    requestAnimationFrameSpy.mockRestore();
   });
 
   it("emits reserved dashboard width when opened and clears it when closed", () => {
@@ -59,5 +69,47 @@ describe("AgentPanelComponent", () => {
 
     expect(component.width).toBe(400);
     expect(emittedWidths.at(-1)).toBe(0);
+  });
+
+  it("keeps full resize directions and updates width and height in floating mode", () => {
+    component.panelMode = "float";
+    component.openPanel();
+
+    component.onResize({ width: 520, height: 620 });
+
+    expect(component.width).toBe(520);
+    expect(component.height).toBe(620);
+    expect((component as any).floatingResizeDirections).toEqual([
+      "left",
+      "right",
+      "top",
+      "bottom",
+      "topLeft",
+      "topRight",
+      "bottomLeft",
+      "bottomRight",
+    ]);
+  });
+
+  it("keeps dock width independent from floating layout when switching modes", () => {
+    const emittedWidths: number[] = [];
+    component.panelWidthChange.subscribe(width => emittedWidths.push(width));
+
+    component.openPanel();
+    component.onResize({ width: 480 });
+
+    component.panelMode = "float";
+    component.ngOnChanges({ panelMode: new SimpleChange("dock", "float", false) });
+    expect(component.width).toBe(400);
+    expect(emittedWidths.at(-1)).toBe(0);
+
+    component.onResize({ width: 620, height: 620 });
+    expect(component.width).toBe(620);
+    expect(component.height).toBe(620);
+
+    component.panelMode = "dock";
+    component.ngOnChanges({ panelMode: new SimpleChange("float", "dock", false) });
+    expect(component.width).toBe(480);
+    expect(emittedWidths.at(-1)).toBe(480);
   });
 });

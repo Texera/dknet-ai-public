@@ -35,22 +35,39 @@
 </button>
 
 <div
-  *ngIf="isOpen"
+  *ngIf="isOpen && !isFloatingMode"
   id="agent-container"
-  cdkDrag
-  [cdkDragDisabled]="!isFloatingMode"
-  [cdkDragFreeDragPosition]="dragPosition"
-  (cdkDragEnded)="onDragEnded($event)"
-  [class.agent-dock]="!isFloatingMode"
-  [class.agent-float]="isFloatingMode"
+  class="agent-dock"
   nz-resizable
   [nzMinWidth]="minPanelWidth"
-  [nzMaxWidth]="currentMaxPanelWidth"
-  [nzMinHeight]="currentMinPanelHeight"
-  [nzMaxHeight]="currentMaxPanelHeight"
+  [nzMaxWidth]="maxPanelWidth"
   [style.width.px]="width"
-  [style.height.px]="isFloatingMode ? height : null"
   (nzResize)="onResize($event)">
+  <ng-container *ngTemplateOutlet="panelContent"></ng-container>
+  <nz-resize-handles [nzDirections]="dockResizeDirections"></nz-resize-handles>
+</div>
+
+<div
+  *ngIf="isOpen && isFloatingMode"
+  id="agent-container"
+  class="agent-float"
+  cdkDrag
+  [cdkDragFreeDragPosition]="dragPosition"
+  (cdkDragEnded)="onDragEnded($event)"
+  nz-resizable
+  nzBounds="window"
+  [nzMinWidth]="minPanelWidth"
+  [nzMaxWidth]="maxFloatingPanelWidth"
+  [nzMinHeight]="minPanelHeight"
+  [nzMaxHeight]="maxPanelHeight"
+  [style.width.px]="width"
+  [style.height.px]="height"
+  (nzResize)="onResize($event)">
+  <ng-container *ngTemplateOutlet="panelContent"></ng-container>
+  <nz-resize-handles [nzDirections]="floatingResizeDirections"></nz-resize-handles>
+</div>
+
+<ng-template #panelContent>
   <!-- Minimize Button -->
   <ul
     id="return-button"
@@ -70,8 +87,14 @@
     #content
     id="content">
     <h4
+      *ngIf="isFloatingMode"
       id="title"
       cdkDragHandle>
+      AI Agents
+    </h4>
+    <h4
+      *ngIf="!isFloatingMode"
+      id="title">
       AI Agents
     </h4>
 
@@ -129,6 +152,4 @@
       </nz-tab>
     </nz-tabs>
   </div>
-
-  <nz-resize-handles [nzDirections]="resizeDirections"></nz-resize-handles>
-</div>
+</ng-template>
