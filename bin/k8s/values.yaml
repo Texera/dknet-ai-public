@@ -107,7 +107,11 @@ lakefs:
       s3:
         endpoint: http://texera-minio:9000
         pre_signed_expiry: 15m
-        pre_signed_endpoint: http://localhost:31000
+        # Host baked into LakeFS presigned URLs; must be reachable by BOTH in-cluster consumers
+        # (compiling-service/CU reading datasets for schema inference + execution) AND the browser.
+        # On OrbStack the cluster service DNS is routed to the host, so this FQDN works for both;
+        # http://localhost:31000 (the MinIO NodePort) is host-only and is refused from pods.
+        pre_signed_endpoint: http://texera-minio.texera.svc.cluster.local:9000
         force_path_style: true
         credentials:
           access_key_id: texera_minio
