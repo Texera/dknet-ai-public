@@ -43,6 +43,13 @@ object EnvironmentalVariable {
   val ENV_FILE_SERVICE_RESOLVE_PATH_ENDPOINT = "FILE_SERVICE_RESOLVE_PATH_ENDPOINT"
 
   /**
+    * Dashboard Service endpoint. A computing unit holds no Postgres credentials (issue #5011) and
+    * routes execution-metadata operations (create/status/result-URIs) here over HTTP.
+    */
+  val ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT =
+    "DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT"
+
+  /**
     * Auth related vars
     */
   val ENV_USER_JWT_TOKEN = "USER_JWT_TOKEN"
