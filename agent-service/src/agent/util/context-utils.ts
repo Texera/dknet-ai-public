@@ -95,19 +95,10 @@ function serializeEvent(step: ReActStep, eventNumber: number, maxResolvedCharLim
   const eventType = getEventType(step);
   const lines: string[] = [];
   lines.push(`## Event ${eventNumber}: ${eventType}`);
-  lines.push(`Message ID: ${step.messageId}`);
-  lines.push(`ReAct Step ID: ${step.id}`);
-  lines.push(`Step ID: ${step.stepId}`);
-  lines.push(`Timestamp: ${formatTimestamp(step.timestamp)}`);
-  lines.push(`Role: ${step.role}`);
-  lines.push(`Begin: ${step.isBegin ? "true" : "false"}`);
-  lines.push(`End: ${step.isEnd ? "true" : "false"}`);
 
   if (step.role === "user") {
-    lines.push(`Source: ${step.messageSource ?? "chat"}`);
     lines.push("Content:");
     appendBlock(lines, step.content || "(empty)");
-    appendUsage(lines, step);
     return lines.join("\n");
   }
 
@@ -126,7 +117,6 @@ function serializeEvent(step: ReActStep, eventNumber: number, maxResolvedCharLim
       lines.push("");
       lines.push(`### Tool Call ${i + 1}`);
       lines.push(`Action: ${toolCall.toolName}`);
-      lines.push(`Tool Call ID: ${toolCall.toolCallId}`);
       lines.push("Parameters:");
       appendBlock(lines, serializeValue(toolCall.input));
       if (toolResult) {
@@ -146,13 +136,11 @@ function serializeEvent(step: ReActStep, eventNumber: number, maxResolvedCharLim
   for (const result of unmatchedResults) {
     lines.push("");
     lines.push("### Tool Result Without Matching Call");
-    lines.push(`Tool Call ID: ${result.toolCallId}`);
     lines.push(`Result Status: ${result.isError ? "failed" : "succeeded"}`);
     lines.push("Result:");
     appendBlock(lines, serializeToolResult(result.output, maxResolvedCharLimit));
   }
 
-  appendUsage(lines, step);
   return lines.join("\n");
 }
 
@@ -161,16 +149,6 @@ function getEventType(step: ReActStep): "user_task" | "user_event" | "agent_even
     return "agent_event";
   }
   return step.messageSource === "feedback" ? "user_event" : "user_task";
-}
-
-function appendUsage(lines: string[], step: ReActStep): void {
-  if (!step.usage) {
-    return;
-  }
-  lines.push("Usage:");
-  lines.push(`  inputTokens: ${step.usage.inputTokens ?? 0}`);
-  lines.push(`  outputTokens: ${step.usage.outputTokens ?? 0}`);
-  lines.push(`  totalTokens: ${step.usage.totalTokens ?? 0}`);
 }
 
 function appendBlock(lines: string[], content: string): void {
@@ -195,17 +173,6 @@ function serializeValue(value: unknown): string {
     }
   } catch {}
   return String(value);
-}
-
-function formatTimestamp(timestamp: number): string {
-  if (!Number.isFinite(timestamp)) {
-    return "unknown";
-  }
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return "unknown";
-  }
-  return date.toISOString();
 }
 
 function serializeDag(

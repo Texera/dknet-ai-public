@@ -93,7 +93,7 @@ function getContextContent(
 }
 
 describe("assembleContext event serialization", () => {
-  test("serializes user and agent ReAct steps as ordered events with full tool details", () => {
+  test("serializes user and agent ReAct steps without storage metadata", () => {
     const content = getContextContent([makeUserStep(), makeAgentStep()]);
 
     expect(content).toContain("# Event Context");
@@ -101,9 +101,6 @@ describe("assembleContext event serialization", () => {
     expect(content).not.toContain("# Ongoing Task");
 
     expect(content).toContain("## Event 1: user_task");
-    expect(content).toContain("Message ID: msg-1");
-    expect(content).toContain("Step ID: 0");
-    expect(content).toContain("Source: chat");
     expect(content).toContain("Content:");
     expect(content).toContain("List my datasets");
 
@@ -111,12 +108,23 @@ describe("assembleContext event serialization", () => {
     expect(content).toContain("Thought:");
     expect(content).toContain("I need to inspect accessible datasets.");
     expect(content).toContain("Action: listDatasets");
-    expect(content).toContain("Tool Call ID: call-1");
     expect(content).toContain('"visibility": "all"');
     expect(content).toContain('"ownership": "all"');
+    expect(content).toContain("Result Status: succeeded");
     expect(content).toContain("Result:");
     expect(content).toContain("dataset-a");
     expect(content).toContain("with two files");
+
+    expect(content).not.toContain("Message ID:");
+    expect(content).not.toContain("ReAct Step ID:");
+    expect(content).not.toContain("Step ID:");
+    expect(content).not.toContain("Timestamp:");
+    expect(content).not.toContain("Role:");
+    expect(content).not.toContain("Begin:");
+    expect(content).not.toContain("End:");
+    expect(content).not.toContain("Source:");
+    expect(content).not.toContain("Tool Call ID:");
+    expect(content).not.toContain("Usage:");
   });
 
   test("serializes user feedback as a user_event", () => {
@@ -128,8 +136,8 @@ describe("assembleContext event serialization", () => {
     ]);
 
     expect(content).toContain("## Event 1: user_event");
-    expect(content).toContain("Source: feedback");
     expect(content).toContain("That answer missed the private datasets.");
+    expect(content).not.toContain("Source:");
   });
 
   test("limits serialized tool results with maxResolvedCharLimit", () => {
