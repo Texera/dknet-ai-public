@@ -48,8 +48,7 @@ object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
     repositoryName = DATASET.REPOSITORY_NAME,
     isDatasetPublic = DATASET.IS_PUBLIC,
     isDatasetDownloadable = DATASET.IS_DOWNLOADABLE,
-    datasetUserAccess = DATASET_USER_ACCESS.PRIVILEGE,
-    datasetCoverImage = DATASET.COVER_IMAGE
+    datasetUserAccess = DATASET_USER_ACCESS.PRIVILEGE
   )
 
   /*
