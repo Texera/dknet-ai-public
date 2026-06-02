@@ -29,27 +29,39 @@
 
 #agent-container {
   position: fixed;
-  right: 16px;
-  bottom: 84px;
+  top: 0;
+  right: 0;
+  bottom: 0;
   z-index: 1001;
   background: white;
   pointer-events: auto;
+  border-left: 1px solid #d9d9d9;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
 }
 
 #title {
-  padding: 5px 9px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 44px 0 12px;
   border-bottom: 1px solid #e0e0e0;
-  position: absolute;
-  top: 0;
   background: white;
   width: 100%;
   z-index: 2;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 #agent-docked-button {
   position: fixed;
-  bottom: 40px; // Position above the mini-map button
-  right: 10px;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
   z-index: 1002;
   pointer-events: auto;
   box-shadow:
@@ -64,22 +76,16 @@
   right: 0;
   z-index: 3;
   display: flex;
+  height: 36px;
 }
 
 #content {
   width: 100%;
   height: 100%;
-  padding-top: 32px;
-  display: inline-block;
-  overflow-y: auto;
-}
-
-.shadow {
-  border-radius: 5px;
-  box-shadow:
-    0 3px 1px -2px #0003,
-    0 2px 2px #00000024,
-    0 1px 5px #0000001f;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .ant-menu-item {
@@ -90,7 +96,9 @@
 }
 
 .agent-tabs {
-  height: calc(100% - 32px); // Account for the title bar
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;

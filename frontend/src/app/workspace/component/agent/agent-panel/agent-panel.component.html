@@ -35,25 +35,20 @@
 </button>
 
 <div
-  cdkDrag
+  *ngIf="isOpen"
   id="agent-container"
-  class="box"
+  class="agent-dock"
   nz-resizable
-  [nzMinWidth]="400"
-  [nzMinHeight]="450"
-  [nzMaxWidth]="window.innerWidth * 0.9"
-  [nzMaxHeight]="window.innerHeight * 0.85"
+  [nzMinWidth]="minPanelWidth"
+  [nzMaxWidth]="maxPanelWidth"
   [style.width.px]="width"
-  [style.height.px]="height"
-  (nzResize)="onResize($event)"
-  (cdkDragStarted)="handleDragStart()"
-  [cdkDragFreeDragPosition]="dragPosition">
+  (nzResize)="onResize($event)">
   <!-- Minimize Button -->
   <ul
     id="return-button"
     nz-menu
-    [ngClass]="{'shadow': !width}"
-    *ngIf="width">
+    nz-tooltip
+    nzTooltipTitle="Collapse panel">
     <li
       nz-menu-item
       (click)="openPanel()">
@@ -65,13 +60,8 @@
 
   <div
     #content
-    id="content"
-    [hidden]="!width">
-    <h4
-      id="title"
-      cdkDragHandle>
-      AI Agents
-    </h4>
+    id="content">
+    <h4 id="title">AI Agents</h4>
 
     <!-- Tabs -->
     <nz-tabs
@@ -126,7 +116,7 @@
         </ng-template>
       </nz-tab>
     </nz-tabs>
-
-    <nz-resize-handles [nzDirections]="['left', 'bottom', 'bottomLeft']"></nz-resize-handles>
   </div>
+
+  <nz-resize-handles [nzDirections]="['left']"></nz-resize-handles>
 </div>

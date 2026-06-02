@@ -17,9 +17,11 @@
  * under the License.
  */
 
-import { Component } from "@angular/core";
+import { Component, HostBinding } from "@angular/core";
 import { GuiConfigService } from "./common/service/gui-config.service";
-import { UntilDestroy } from "@ngneat/until-destroy";
+import { NavigationEnd, Router } from "@angular/router";
+import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
+import { filter } from "rxjs";
 
 @UntilDestroy()
 @Component({
@@ -34,14 +36,26 @@ import { UntilDestroy } from "@ngneat/until-destroy";
       <button (click)="retry()">Retry</button>
     </div>
     <router-outlet *ngIf="configLoaded"></router-outlet>
-    <texera-agent-panel *ngIf="configLoaded && copilotEnabled"></texera-agent-panel>
+    <texera-agent-panel
+      *ngIf="shouldShowAgentPanel"
+      (panelWidthChange)="onAgentPanelWidthChange($event)"></texera-agent-panel>
   `,
   standalone: false,
 })
 export class AppComponent {
   configLoaded = false;
+  agentPanelReservedWidth = 0;
+  private currentUrl = "";
 
-  constructor(private config: GuiConfigService) {
+  @HostBinding("style.--agent-panel-space")
+  get agentPanelSpace(): string {
+    return `${this.agentPanelReservedWidth}px`;
+  }
+
+  constructor(
+    private config: GuiConfigService,
+    private router: Router
+  ) {
     // determine whether configuration was successfully loaded by APP_INITIALIZER
     try {
       // accessing env will throw if not loaded
@@ -50,6 +64,16 @@ export class AppComponent {
     } catch {
       this.configLoaded = false;
     }
+
+    this.updateCurrentUrl(this.router.url);
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        untilDestroyed(this)
+      )
+      .subscribe(event => {
+        this.updateCurrentUrl(event.urlAfterRedirects);
+      });
   }
 
   retry(): void {
@@ -58,5 +82,32 @@ export class AppComponent {
 
   get copilotEnabled(): boolean {
     return this.config.env.copilotEnabled;
+  }
+
+  get shouldShowAgentPanel(): boolean {
+    return this.configLoaded && this.copilotEnabled && !this.isAboutPage(this.currentUrl);
+  }
+
+  onAgentPanelWidthChange(width: number): void {
+    this.agentPanelReservedWidth = this.shouldShowAgentPanel ? width : 0;
+    this.dispatchResizeAfterLayoutChange();
+  }
+
+  private updateCurrentUrl(url: string): void {
+    this.currentUrl = url;
+    if (!this.shouldShowAgentPanel) {
+      this.agentPanelReservedWidth = 0;
+      this.dispatchResizeAfterLayoutChange();
+    }
+  }
+
+  private isAboutPage(url: string): boolean {
+    return url === "/" || url.startsWith("/?") || url.startsWith("/dashboard/about");
+  }
+
+  private dispatchResizeAfterLayoutChange(): void {
+    const resizeEvent = new Event("resize");
+    window.dispatchEvent(resizeEvent);
+    setTimeout(() => window.dispatchEvent(resizeEvent), 175);
   }
 }

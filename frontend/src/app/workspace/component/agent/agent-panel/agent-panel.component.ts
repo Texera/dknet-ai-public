@@ -17,24 +17,31 @@
  * under the License.
  */
 
-import { Component, HostListener, Input, OnDestroy, OnInit, OnChanges, SimpleChanges } from "@angular/core";
+import {
+  Component,
+  EventEmitter,
+  HostListener,
+  Input,
+  OnChanges,
+  OnDestroy,
+  OnInit,
+  Output,
+  SimpleChanges,
+} from "@angular/core";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { NzResizeEvent, NzResizableDirective, NzResizeHandlesComponent } from "ng-zorro-antd/resizable";
 import { AgentService, AgentInfo } from "../../../service/agent/agent.service";
-import { calculateTotalTranslate3d } from "../../../../common/util/panel-dock";
-import { NgIf, NgClass, NgFor } from "@angular/common";
+import { NgIf, NgFor } from "@angular/common";
 import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
 import { NzButtonComponent } from "ng-zorro-antd/button";
 import { NzWaveDirective } from "ng-zorro-antd/core/wave";
 import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import { NzIconDirective } from "ng-zorro-antd/icon";
-import { CdkDrag, CdkDragHandle } from "@angular/cdk/drag-drop";
 import { NzMenuDirective, NzMenuItemComponent } from "ng-zorro-antd/menu";
 import { NzTabsComponent, NzTabBarExtraContentDirective, NzTabComponent, NzTabDirective } from "ng-zorro-antd/tabs";
 import { AgentRegistrationComponent } from "./agent-registration/agent-registration.component";
 import { AgentChatComponent } from "./agent-chat/agent-chat.component";
-import { FormlyRepeatDndComponent } from "../../../../common/formly/repeat-dnd/repeat-dnd.component";
 
 @UntilDestroy()
 @Component({
@@ -49,12 +56,9 @@ import { FormlyRepeatDndComponent } from "../../../../common/formly/repeat-dnd/r
     ɵNzTransitionPatchDirective,
     NzTooltipDirective,
     NzIconDirective,
-    CdkDrag,
     NzResizableDirective,
     NzMenuDirective,
-    NgClass,
     NzMenuItemComponent,
-    CdkDragHandle,
     NzTabsComponent,
     NzTabBarExtraContentDirective,
     NzTabComponent,
@@ -63,13 +67,13 @@ import { FormlyRepeatDndComponent } from "../../../../common/formly/repeat-dnd/r
     NgFor,
     AgentChatComponent,
     NzResizeHandlesComponent,
-    FormlyRepeatDndComponent,
   ],
 })
 export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   protected readonly window = window;
+  protected readonly minPanelWidth = AgentPanelComponent.MIN_PANEL_WIDTH;
   private static readonly MIN_PANEL_WIDTH = 400;
-  private static readonly MIN_PANEL_HEIGHT = 450;
+  private static readonly MAX_PANEL_WIDTH_RATIO = 0.65;
 
   /**
    * Optional agent ID to activate when the panel loads.
@@ -77,14 +81,12 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    * and switch to this agent's tab automatically.
    */
   @Input() agentIdToActivate?: string;
+  @Output() panelWidthChange = new EventEmitter<number>();
 
-  // Panel dimensions and position
+  // Panel width. A width of 0 means the right dock is collapsed.
   width: number = 0; // Start with 0 to show docked button
-  height = Math.max(AgentPanelComponent.MIN_PANEL_HEIGHT, window.innerHeight * 0.7);
-  id = -1;
-  dragPosition = { x: 0, y: 0 };
-  returnPosition = { x: 0, y: 0 };
-  isDocked = true;
+  private lastOpenWidth = AgentPanelComponent.MIN_PANEL_WIDTH;
+  private resizeAnimationFrameId = -1;
 
   // Tab management
   selectedTabIndex: number = 0; // 0 = registration tab, 1+ = agent tabs
@@ -94,6 +96,17 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   activeAgentId: string | null = null;
 
   constructor(private agentService: AgentService) {}
+
+  get isOpen(): boolean {
+    return this.width > 0;
+  }
+
+  protected get maxPanelWidth(): number {
+    return Math.max(
+      AgentPanelComponent.MIN_PANEL_WIDTH,
+      Math.floor(this.window.innerWidth * AgentPanelComponent.MAX_PANEL_WIDTH_RATIO)
+    );
+  }
 
   ngOnInit(): void {
     this.loadPanelSettings();
@@ -142,8 +155,8 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
     }
 
     // Open the panel if it's closed
-    if (this.width === 0) {
-      this.width = AgentPanelComponent.MIN_PANEL_WIDTH;
+    if (!this.isOpen) {
+      this.setPanelWidth(this.lastOpenWidth);
     }
 
     // Switch to the agent's tab and activate it
@@ -177,6 +190,7 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
 
   @HostListener("window:beforeunload")
   ngOnDestroy(): void {
+    cancelAnimationFrame(this.resizeAnimationFrameId);
     // Deactivate any active agent before destroying
     this.deactivateCurrentAgent();
     this.savePanelSettings();
@@ -186,13 +200,10 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    * Open the panel from docked state
    */
   public openPanel(): void {
-    if (this.width === 0) {
-      // Open panel
-      this.width = AgentPanelComponent.MIN_PANEL_WIDTH;
+    if (!this.isOpen) {
+      this.setPanelWidth(this.lastOpenWidth);
     } else {
-      // Close panel (dock it)
-      this.width = 0;
-      this.isDocked = true;
+      this.setPanelWidth(0);
     }
   }
 
@@ -306,19 +317,14 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   /**
    * Handle panel resize
    */
-  onResize({ width, height }: NzResizeEvent): void {
-    cancelAnimationFrame(this.id);
-    this.id = requestAnimationFrame(() => {
-      this.width = width!;
-      this.height = height!;
+  onResize({ width }: NzResizeEvent): void {
+    if (width === undefined) {
+      return;
+    }
+    cancelAnimationFrame(this.resizeAnimationFrameId);
+    this.resizeAnimationFrameId = requestAnimationFrame(() => {
+      this.setPanelWidth(width);
     });
-  }
-
-  /**
-   * Handle drag start
-   */
-  handleDragStart(): void {
-    this.isDocked = false;
   }
 
   /**
@@ -326,33 +332,10 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    */
   private loadPanelSettings(): void {
     const savedWidth = localStorage.getItem("agent-panel-width");
-    const savedHeight = localStorage.getItem("agent-panel-height");
-    const savedStyle = localStorage.getItem("agent-panel-style");
-    const savedDocked = localStorage.getItem("agent-panel-docked");
-
-    // Only restore width if the panel was not docked
-    if (savedDocked === "false" && savedWidth) {
+    if (savedWidth) {
       const parsedWidth = Number(savedWidth);
-      if (!isNaN(parsedWidth) && parsedWidth >= AgentPanelComponent.MIN_PANEL_WIDTH) {
-        this.width = parsedWidth;
-      }
-    }
-
-    if (savedHeight) {
-      const parsedHeight = Number(savedHeight);
-      if (!isNaN(parsedHeight) && parsedHeight >= AgentPanelComponent.MIN_PANEL_HEIGHT) {
-        this.height = parsedHeight;
-      }
-    }
-
-    if (savedStyle) {
-      const container = document.getElementById("agent-container");
-      if (container) {
-        container.style.cssText = savedStyle;
-        const translates = container.style.transform;
-        const [xOffset, yOffset] = calculateTotalTranslate3d(translates);
-        this.returnPosition = { x: -xOffset, y: -yOffset };
-        this.isDocked = this.dragPosition.x === this.returnPosition.x && this.dragPosition.y === this.returnPosition.y;
+      if (!isNaN(parsedWidth)) {
+        this.lastOpenWidth = this.clampPanelWidth(parsedWidth);
       }
     }
   }
@@ -361,13 +344,23 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    * Save panel settings to localStorage
    */
   private savePanelSettings(): void {
-    localStorage.setItem("agent-panel-width", String(this.width));
-    localStorage.setItem("agent-panel-height", String(this.height));
-    localStorage.setItem("agent-panel-docked", String(this.width === 0));
+    localStorage.setItem("agent-panel-width", String(this.lastOpenWidth));
+    localStorage.removeItem("agent-panel-height");
+    localStorage.removeItem("agent-panel-style");
+    localStorage.removeItem("agent-panel-docked");
+  }
 
-    const container = document.getElementById("agent-container");
-    if (container) {
-      localStorage.setItem("agent-panel-style", container.style.cssText);
+  private setPanelWidth(width: number): void {
+    this.width = width === 0 ? 0 : this.clampPanelWidth(width);
+    if (this.isOpen) {
+      this.lastOpenWidth = this.width;
     }
+    this.savePanelSettings();
+    this.panelWidthChange.emit(this.width);
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  private clampPanelWidth(width: number): number {
+    return Math.min(Math.max(Math.round(width), AgentPanelComponent.MIN_PANEL_WIDTH), this.maxPanelWidth);
   }
 }
