@@ -55,8 +55,7 @@ RUN apt-get update && apt-get install -y \
 COPY bin/protoc-version.txt bin/protoc-version.txt
 COPY bin/python-proto-gen.sh bin/python-proto-gen.sh
 RUN PROTOC_VERSION=$(cat bin/protoc-version.txt) \
-    && PROTOC_ARCH="$(uname -m | sed 's/aarch64/aarch_64/')" \
-    && curl -fsSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip" \
+    && curl -fsSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
     && unzip -o /tmp/protoc.zip -d /usr/local \
     && chmod +x /usr/local/bin/protoc \
     && rm /tmp/protoc.zip \
