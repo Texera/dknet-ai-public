@@ -33,11 +33,13 @@ import {
   interval,
   switchMap,
   takeUntil,
+  distinctUntilChanged,
 } from "rxjs";
 import { NotificationService } from "../../../common/service/notification/notification.service";
 import { WorkflowPersistService } from "../../../common/service/workflow-persist/workflow-persist.service";
 import { AppSettings } from "../../../common/app-setting";
 import { AuthService } from "../../../common/service/user/auth.service";
+import { UserService } from "../../../common/service/user/user.service";
 import { AgentState, ReActStep, ModelMessage } from "./agent-types";
 import { Workflow, WorkflowContent } from "../../../common/type/workflow";
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
@@ -233,11 +235,20 @@ export class AgentService {
     private notificationService: NotificationService,
     private workflowPersistService: WorkflowPersistService,
     private ngZone: NgZone,
-    private computingUnitStatusService: ComputingUnitStatusService
+    private computingUnitStatusService: ComputingUnitStatusService,
+    private userService: UserService
   ) {
-    // Sync local cache with backend on service initialization
-    // This handles cases where the backend was restarted
-    this.syncAgentsWithBackend();
+    // Agent visibility is scoped by the current user's JWT. Any user change
+    // invalidates the local cache and active WebSocket connections.
+    this.userService
+      .userChanged()
+      .pipe(distinctUntilChanged((previous, current) => previous?.uid === current?.uid))
+      .subscribe(user => {
+        this.clearAgentCache();
+        if (user && AuthService.getAccessToken()) {
+          this.syncAgentsWithBackend();
+        }
+      });
   }
 
   /**
@@ -288,6 +299,20 @@ export class AgentService {
     return context;
   }
 
+  private clearAgentCache(): void {
+    const hadAgents = this.agents.size > 0;
+    const hadTracking = this.agentStateTracking.size > 0;
+
+    for (const agentId of Array.from(this.agentStateTracking.keys())) {
+      this.stopStatePolling(agentId);
+    }
+    this.agents.clear();
+
+    if (hadAgents || hadTracking) {
+      this.agentChangeSubject.next();
+    }
+  }
+
   private updateTrackingWorkflowContext(tracking: AgentStateTracking, workflowId?: number): void {
     if (tracking.workflowId === workflowId) {
       return;
@@ -309,9 +334,19 @@ export class AgentService {
    * This is called on service initialization and handles backend restarts.
    */
   private syncAgentsWithBackend(): void {
+    if (!AuthService.getAccessToken()) {
+      this.clearAgentCache();
+      return;
+    }
+
     this.http
       .get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`, this.agentHeaders())
-      .pipe(catchError(() => of({ agents: [] })))
+      .pipe(
+        catchError(() => {
+          this.clearAgentCache();
+          return of({ agents: [] });
+        })
+      )
       .subscribe(response => {
         const backendAgentIds = new Set(response.agents.map(a => a.id));
 
@@ -828,6 +863,11 @@ export class AgentService {
    * Also syncs local cache with backend - removes any stale agents that no longer exist on the backend.
    */
   public getAllAgents(): Observable<AgentInfo[]> {
+    if (!AuthService.getAccessToken()) {
+      this.clearAgentCache();
+      return of([]);
+    }
+
     return this.http.get<ApiAgentListResponse>(`${this.AGENT_API_BASE}/agents`, this.agentHeaders()).pipe(
       map(response => {
         const agents = response.agents.map(a => ({
@@ -867,7 +907,10 @@ export class AgentService {
 
         return agents;
       }),
-      catchError(() => of(Array.from(this.agents.values())))
+      catchError(() => {
+        this.clearAgentCache();
+        return of([]);
+      })
     );
   }
 

@@ -104,7 +104,7 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
         .getAllAgents()
         .pipe(untilDestroyed(this))
         .subscribe(agents => {
-          this.agents = agents;
+          this.setAgents(agents);
           // Try to activate the agent if agentIdToActivate is set
           this.tryActivateAgentFromInput();
         });
@@ -115,7 +115,7 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
       .getAllAgents()
       .pipe(untilDestroyed(this))
       .subscribe(agents => {
-        this.agents = agents;
+        this.setAgents(agents);
         // Try to activate the agent if agentIdToActivate is set
         this.tryActivateAgentFromInput();
       });
@@ -163,6 +163,18 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
     this.agentIdToActivate = undefined;
   }
 
+  private setAgents(agents: AgentInfo[]): void {
+    this.agents = agents;
+
+    if (this.activeAgentId && !agents.some(agent => agent.id === this.activeAgentId)) {
+      this.deactivateCurrentAgent();
+    }
+
+    if (this.selectedTabIndex > agents.length) {
+      this.selectedTabIndex = 0;
+    }
+  }
+
   @HostListener("window:beforeunload")
   ngOnDestroy(): void {
     // Deactivate any active agent before destroying
@@ -202,7 +214,7 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
       .getAllAgents()
       .pipe(untilDestroyed(this))
       .subscribe(agents => {
-        this.agents = agents;
+        this.setAgents(agents);
         const agentIndex = agents.findIndex(agent => agent.id === agentId);
         if (agentIndex !== -1) {
           this.selectedTabIndex = agentIndex + 1; // +1 because tab 0 is registration
