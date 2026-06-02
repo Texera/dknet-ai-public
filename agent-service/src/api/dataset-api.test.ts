@@ -19,6 +19,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  buildDatasetApiUrl,
   getFullPathFromDatasetFileNode,
   listAccessibleDatasets,
   listDatasetVersions,
@@ -46,6 +47,14 @@ function setMockFetch(handler: (url: string | URL | Request, init?: RequestInit)
 }
 
 describe("dataset-api", () => {
+  test("builds dataset URLs for file-service endpoints with or without api prefix", () => {
+    expect(buildDatasetApiUrl("http://localhost:9092", "/list")).toBe("http://localhost:9092/api/dataset/list");
+    expect(buildDatasetApiUrl("http://localhost:9092/api", "/list")).toBe("http://localhost:9092/api/dataset/list");
+    expect(buildDatasetApiUrl("http://localhost:9092/api/", "7/version/list")).toBe(
+      "http://localhost:9092/api/dataset/7/version/list"
+    );
+  });
+
   test("lists accessible datasets through the file-service dataset route", async () => {
     const calls: Array<[string, RequestInit | undefined]> = [];
     setMockFetch(async (url: string | URL | Request, init?: RequestInit) => {

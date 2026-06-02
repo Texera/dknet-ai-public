@@ -71,9 +71,14 @@ export interface DatasetVersionRootFileNodesResponse {
 
 const DATASET_BASE_URL = "dataset";
 
-function datasetApiUrl(path: string): string {
+export function buildDatasetApiUrl(fileServiceEndpoint: string, path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${getBackendConfig().fileServiceEndpoint}/api/${DATASET_BASE_URL}${normalizedPath}`;
+  const normalizedEndpoint = fileServiceEndpoint.replace(/\/+$/, "").replace(/\/api$/, "");
+  return `${normalizedEndpoint}/api/${DATASET_BASE_URL}${normalizedPath}`;
+}
+
+function datasetApiUrl(path: string): string {
+  return buildDatasetApiUrl(getBackendConfig().fileServiceEndpoint, path);
 }
 
 async function requestDatasetJson<T>(
