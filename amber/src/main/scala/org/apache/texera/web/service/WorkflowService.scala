@@ -57,7 +57,7 @@ import org.apache.texera.web.service.WorkflowService.mkWorkflowStateId
 import org.apache.texera.web.storage.ExecutionStateStore.updateWorkflowState
 import org.apache.texera.web.storage.{ExecutionStateStore, WorkflowStateStore}
 import org.apache.texera.web.{SubscriptionManager, WorkflowLifecycleManager}
-import org.apache.texera.workflow.LogicalPlan
+import org.apache.texera.amber.compiler.model.LogicalPlan
 import play.api.libs.json.Json
 
 import java.net.URI
@@ -111,12 +111,19 @@ class WorkflowService(
     s"workflowId=$workflowId",
     cleanUpTimeout,
     () => {
-      // clear the storage resources associated with the latest execution
-      WorkflowExecutionService
-        .getLatestExecutionId(workflowId, computingUnitId)
-        .foreach(eid => {
-          clearExecutionResources(eid)
-        })
+      // clear the storage resources associated with the latest execution. This runs on a lifecycle
+      // timer with no request context (hence no per-execution user token); it is best-effort, so a
+      // metadata failure here must never propagate and tear down the session.
+      try {
+        WorkflowExecutionService
+          .getLatestExecutionId(workflowId, computingUnitId)
+          .foreach(eid => {
+            clearExecutionResources(eid)
+          })
+      } catch {
+        case e: Throwable =>
+          logger.warn(s"Best-effort end-of-session cleanup failed (continuing): ${e.getMessage}")
+      }
       WorkflowService.workflowServiceMapping.remove(mkWorkflowStateId(workflowId))
       if (executionService.getValue != null) {
         // shutdown client
@@ -134,7 +141,7 @@ class WorkflowService(
         (oldState, newState) =>
           {
             if (oldState.state != COMPLETED && newState.state == COMPLETED) {
-              lastCompletedLogicalPlan = Option.apply(executionService.workflow.logicalPlan)
+              lastCompletedLogicalPlan = executionService.workflow.logicalPlan
             }
             Iterable.empty
           }
@@ -190,31 +197,37 @@ class WorkflowService(
       executionService.getValue.unsubscribeAll()
     }
 
+    // The execution owner is optional here: a no-auth computing unit has no local user, so it sends
+    // no uid and the dashboard service resolves the owner from the forwarded token. The DB's NOT NULL
+    // constraint on uid is surfaced as a readable error by ExecutionsMetadataPersistService if needed.
     val (uidOpt, userEmailOpt) = userOpt.map(user => (user.getUid, user.getEmail)).unzip
 
-    // uid is NOT NULL in the DB; fail early here rather than letting the insert fail downstream.
-    val uid = uidOpt.getOrElse(
-      throw new IllegalArgumentException(
-        "Cannot start execution: a user id (uid) is required but none was provided."
-      )
-    )
-
     val workflowContext: WorkflowContext = createWorkflowContext()
+    // The issuing user's JWT travels in the request; the CU forwards it on its outbound calls.
+    workflowContext.userJwtToken = req.userJwtToken
     var controllerConf = ControllerConfig.default
 
     // clean up results from previous run
     val previousExecutionId =
-      WorkflowExecutionService.getLatestExecutionId(workflowId, req.computingUnitId)
+      WorkflowExecutionService.getLatestExecutionId(
+        workflowId,
+        req.computingUnitId,
+        req.userJwtToken
+      )
     previousExecutionId.foreach(eid => {
+      // Authorize cleanup of the user's previous execution with the token they just forwarded
+      // (a no-DB CU has no other credential for an execution it didn't create this run).
+      RemoteExecutionMetadata.registerExecutionToken(eid.id, req.userJwtToken)
       clearExecutionResources(eid)
     }) // TODO: change this behavior after enabling cache.
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
       workflowContext.workflowId,
-      uid,
+      uidOpt.orNull,
       req.executionName,
       convertToJson(req.engineVersion),
-      req.computingUnitId
+      req.computingUnitId,
+      req.userJwtToken
     )
 
     if (ApplicationConfig.faultToleranceLogRootFolder.isDefined) {
@@ -323,39 +336,53 @@ class WorkflowService(
     * @param eid The execution identity to clean up resources for
     */
   private def clearExecutionResources(eid: ExecutionIdentity): Unit = {
-    // Retrieve URIs for all resources associated with this execution
-    val resultUris = WorkflowExecutionsResource.getResultUrisByExecutionId(eid)
-    val consoleMessagesUris = WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId(eid)
+    // Cleanup is best-effort housekeeping: it reaches the dashboard for this execution's resource
+    // URIs, which can fail (e.g. no usable token for an execution this CU didn't create this run).
+    // A failure here must not crash the run that triggered the cleanup, so swallow and log it. The
+    // per-execution token is always dropped afterwards to keep the registry bounded to live runs.
+    try {
+      // Retrieve URIs for all resources associated with this execution
+      val resultUris = WorkflowExecutionsResource.getResultUrisByExecutionId(eid)
+      val consoleMessagesUris = WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId(eid)
 
-    // Remove references from registry first
-    WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris(eid)
+      // Remove references from registry first
+      WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris(eid)
 
-    // Clean up all result and console message documents
-    (resultUris ++ consoleMessagesUris).foreach { uri =>
-      try DocumentFactory.openDocument(uri)._1.clear()
-      catch {
-        case error: Throwable =>
-          logger.debug(s"Error processing document at $uri: ${error.getMessage}")
-      }
-    }
-
-    // Expire any Iceberg snapshots for runtime statistics
-    WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).foreach { uri =>
-      try {
-        DocumentFactory.openDocument(uri)._1 match {
-          case iceberg: OnIceberg => iceberg.expireSnapshots()
-          case other =>
-            logger.error(
-              s"Cannot expire snapshots: document from URI [$uri] is of type ${other.getClass.getName}. " +
-                s"Expected an instance of ${classOf[OnIceberg].getName}."
-            )
+      // Clean up all result and console message documents
+      (resultUris ++ consoleMessagesUris).foreach { uri =>
+        try DocumentFactory.openDocument(uri)._1.clear()
+        catch {
+          case error: Throwable =>
+            logger.debug(s"Error processing document at $uri: ${error.getMessage}")
         }
-      } catch {
-        case error: Throwable =>
-          logger.debug(s"Error processing document at $uri: ${error.getMessage}")
       }
+
+      // Expire any Iceberg snapshots for runtime statistics
+      WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).foreach { uri =>
+        try {
+          DocumentFactory.openDocument(uri)._1 match {
+            case iceberg: OnIceberg => iceberg.expireSnapshots()
+            case other =>
+              logger.error(
+                s"Cannot expire snapshots: document from URI [$uri] is of type ${other.getClass.getName}. " +
+                  s"Expected an instance of ${classOf[OnIceberg].getName}."
+              )
+          }
+        } catch {
+          case error: Throwable =>
+            logger.debug(s"Error processing document at $uri: ${error.getMessage}")
+        }
+      }
+      // Delete large binaries
+      LargeBinaryManager.deleteAllObjects()
+    } catch {
+      case e: Throwable =>
+        logger.warn(
+          s"Best-effort cleanup of execution $eid resources failed (continuing): ${e.getMessage}"
+        )
+    } finally {
+      // Drop any remembered per-execution token so the registry stays bounded to live executions.
+      RemoteExecutionMetadata.clearExecutionToken(eid.id)
     }
-    // Delete large binaries
-    LargeBinaryManager.deleteAllObjects()
   }
 }
