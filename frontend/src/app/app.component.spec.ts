@@ -18,7 +18,7 @@
  */
 
 import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, NO_ERRORS_SCHEMA, Output } from "@angular/core";
+import { Component, EventEmitter, Input, NO_ERRORS_SCHEMA, Output } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { By } from "@angular/platform-browser";
 import { Router, NavigationEnd } from "@angular/router";
@@ -34,6 +34,7 @@ import { MockGuiConfigService } from "./common/service/gui-config.service.mock";
   standalone: false,
 })
 class AgentPanelStubComponent {
+  @Input() panelMode: "dock" | "float" = "dock";
   @Output() panelWidthChange = new EventEmitter<number>();
 }
 
@@ -77,11 +78,25 @@ describe("AppComponent", () => {
 
     const agentPanel = fixture.debugElement.query(By.css("texera-agent-panel"));
     expect(agentPanel).toBeTruthy();
+    expect(agentPanel.componentInstance.panelMode).toBe("dock");
 
     agentPanel.componentInstance.panelWidthChange.emit(480);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.style.getPropertyValue("--agent-panel-space")).toBe("480px");
+  });
+
+  it("shows the floating agent panel on workspace pages without reserving dashboard width", () => {
+    build("/dashboard/user/workflow/12");
+
+    const agentPanel = fixture.debugElement.query(By.css("texera-agent-panel"));
+    expect(agentPanel).toBeTruthy();
+    expect(agentPanel.componentInstance.panelMode).toBe("float");
+
+    agentPanel.componentInstance.panelWidthChange.emit(480);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.style.getPropertyValue("--agent-panel-space")).toBe("0px");
   });
 
   it("clears the reserved dashboard width when navigating back to the About page", () => {

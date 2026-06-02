@@ -29,18 +29,29 @@
 
 #agent-container {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
   z-index: 1001;
   background: white;
   pointer-events: auto;
-  border-left: 1px solid #d9d9d9;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
+}
+
+#agent-container.agent-dock {
+  top: 0;
+  right: 0;
+  bottom: 0;
   height: 100vh;
   max-height: 100vh;
+  border-left: 1px solid #d9d9d9;
+}
+
+#agent-container.agent-float {
+  right: 16px;
+  bottom: 84px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 #title {
@@ -59,9 +70,8 @@
 
 #agent-docked-button {
   position: fixed;
-  top: 50%;
-  right: 12px;
-  transform: translateY(-50%);
+  bottom: 40px;
+  right: 10px;
   z-index: 1002;
   pointer-events: auto;
   box-shadow:

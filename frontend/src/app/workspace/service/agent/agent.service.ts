@@ -245,7 +245,7 @@ export class AgentService {
   }
 
   private getCurrentWorkflowId(): number | undefined {
-    const match = window.location.pathname.match(/^\/user\/workflow\/(\d+)/);
+    const match = window.location.pathname.match(/^\/dashboard\/user\/workflow\/(\d+)(?:\/)?$/);
     if (!match) {
       return undefined;
     }

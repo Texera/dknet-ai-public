@@ -37,11 +37,19 @@
 <div
   *ngIf="isOpen"
   id="agent-container"
-  class="agent-dock"
+  cdkDrag
+  [cdkDragDisabled]="!isFloatingMode"
+  [cdkDragFreeDragPosition]="dragPosition"
+  (cdkDragEnded)="onDragEnded($event)"
+  [class.agent-dock]="!isFloatingMode"
+  [class.agent-float]="isFloatingMode"
   nz-resizable
   [nzMinWidth]="minPanelWidth"
-  [nzMaxWidth]="maxPanelWidth"
+  [nzMaxWidth]="currentMaxPanelWidth"
+  [nzMinHeight]="currentMinPanelHeight"
+  [nzMaxHeight]="currentMaxPanelHeight"
   [style.width.px]="width"
+  [style.height.px]="isFloatingMode ? height : null"
   (nzResize)="onResize($event)">
   <!-- Minimize Button -->
   <ul
@@ -61,7 +69,11 @@
   <div
     #content
     id="content">
-    <h4 id="title">AI Agents</h4>
+    <h4
+      id="title"
+      cdkDragHandle>
+      AI Agents
+    </h4>
 
     <!-- Tabs -->
     <nz-tabs
@@ -118,5 +130,5 @@
     </nz-tabs>
   </div>
 
-  <nz-resize-handles [nzDirections]="['left']"></nz-resize-handles>
+  <nz-resize-handles [nzDirections]="resizeDirections"></nz-resize-handles>
 </div>

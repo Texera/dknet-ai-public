@@ -33,6 +33,7 @@ describe("AgentService", () => {
   let service: AgentService;
   let http: HttpTestingController;
   let userService: StubUserService;
+  let computingUnitStatusService: { getSelectedComputingUnitValue: ReturnType<typeof vi.fn> };
 
   function putCachedAgent(id = "stale-agent"): void {
     (service as any).agents.set(id, {
@@ -57,6 +58,10 @@ describe("AgentService", () => {
 
   beforeEach(() => {
     localStorage.removeItem(TOKEN_KEY);
+    window.history.pushState({}, "", "/");
+    computingUnitStatusService = {
+      getSelectedComputingUnitValue: vi.fn(() => undefined),
+    };
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
       providers: [
@@ -77,9 +82,7 @@ describe("AgentService", () => {
         },
         {
           provide: ComputingUnitStatusService,
-          useValue: {
-            getSelectedComputingUnitValue: vi.fn(() => undefined),
-          },
+          useValue: computingUnitStatusService,
         },
       ],
     });
@@ -139,5 +142,19 @@ describe("AgentService", () => {
     expect(Array.from((service as any).agents.keys())).toEqual(["visible-agent"]);
     expect(changes).toHaveBeenCalledTimes(1);
     subscription.unsubscribe();
+  });
+
+  it("builds agent request context from the workspace route, selected computing unit, and JWT", () => {
+    AuthService.setAccessToken("valid-user-token");
+    window.history.pushState({}, "", "/dashboard/user/workflow/123");
+    computingUnitStatusService.getSelectedComputingUnitValue.mockReturnValue({
+      computingUnit: { cuid: 456 },
+    });
+
+    expect((service as any).buildRequestContext()).toEqual({
+      userToken: "valid-user-token",
+      workflowId: 123,
+      computingUnitId: 456,
+    });
   });
 });

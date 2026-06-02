@@ -49,4 +49,15 @@ describe("AgentPanelComponent", () => {
     expect(component.width).toBe(0);
     expect(emittedWidths.at(-1)).toBe(0);
   });
+
+  it("opens in floating mode without reserving dashboard width", () => {
+    const emittedWidths: number[] = [];
+    component.panelMode = "float";
+    component.panelWidthChange.subscribe(width => emittedWidths.push(width));
+
+    component.openPanel();
+
+    expect(component.width).toBe(400);
+    expect(emittedWidths.at(-1)).toBe(0);
+  });
 });

@@ -38,6 +38,7 @@ import { filter } from "rxjs";
     <router-outlet *ngIf="configLoaded"></router-outlet>
     <texera-agent-panel
       *ngIf="shouldShowAgentPanel"
+      [panelMode]="agentPanelMode"
       (panelWidthChange)="onAgentPanelWidthChange($event)"></texera-agent-panel>
   `,
   standalone: false,
@@ -88,14 +89,18 @@ export class AppComponent {
     return this.configLoaded && this.copilotEnabled && !this.isAboutPage(this.currentUrl);
   }
 
+  get agentPanelMode(): "dock" | "float" {
+    return this.isWorkspacePage(this.currentUrl) ? "float" : "dock";
+  }
+
   onAgentPanelWidthChange(width: number): void {
-    this.agentPanelReservedWidth = this.shouldShowAgentPanel ? width : 0;
+    this.agentPanelReservedWidth = this.shouldShowAgentPanel && this.agentPanelMode === "dock" ? width : 0;
     this.dispatchResizeAfterLayoutChange();
   }
 
   private updateCurrentUrl(url: string): void {
     this.currentUrl = url;
-    if (!this.shouldShowAgentPanel) {
+    if (!this.shouldShowAgentPanel || this.agentPanelMode === "float") {
       this.agentPanelReservedWidth = 0;
       this.dispatchResizeAfterLayoutChange();
     }
@@ -103,6 +108,10 @@ export class AppComponent {
 
   private isAboutPage(url: string): boolean {
     return url === "/" || url.startsWith("/?") || url.startsWith("/dashboard/about");
+  }
+
+  private isWorkspacePage(url: string): boolean {
+    return /^\/dashboard\/user\/workflow\/\d+(?:[/?#]|$)/.test(url);
   }
 
   private dispatchResizeAfterLayoutChange(): void {

@@ -29,7 +29,12 @@ import {
   SimpleChanges,
 } from "@angular/core";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
-import { NzResizeEvent, NzResizableDirective, NzResizeHandlesComponent } from "ng-zorro-antd/resizable";
+import {
+  type NzResizeDirection,
+  NzResizeEvent,
+  NzResizableDirective,
+  NzResizeHandlesComponent,
+} from "ng-zorro-antd/resizable";
 import { AgentService, AgentInfo } from "../../../service/agent/agent.service";
 import { NgIf, NgFor } from "@angular/common";
 import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
@@ -38,6 +43,7 @@ import { NzWaveDirective } from "ng-zorro-antd/core/wave";
 import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import { NzIconDirective } from "ng-zorro-antd/icon";
+import { CdkDrag, CdkDragEnd, CdkDragHandle } from "@angular/cdk/drag-drop";
 import { NzMenuDirective, NzMenuItemComponent } from "ng-zorro-antd/menu";
 import { NzTabsComponent, NzTabBarExtraContentDirective, NzTabComponent, NzTabDirective } from "ng-zorro-antd/tabs";
 import { AgentRegistrationComponent } from "./agent-registration/agent-registration.component";
@@ -56,9 +62,11 @@ import { AgentChatComponent } from "./agent-chat/agent-chat.component";
     ɵNzTransitionPatchDirective,
     NzTooltipDirective,
     NzIconDirective,
+    CdkDrag,
     NzResizableDirective,
     NzMenuDirective,
     NzMenuItemComponent,
+    CdkDragHandle,
     NzTabsComponent,
     NzTabBarExtraContentDirective,
     NzTabComponent,
@@ -72,8 +80,12 @@ import { AgentChatComponent } from "./agent-chat/agent-chat.component";
 export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   protected readonly window = window;
   protected readonly minPanelWidth = AgentPanelComponent.MIN_PANEL_WIDTH;
+  protected readonly minPanelHeight = AgentPanelComponent.MIN_PANEL_HEIGHT;
   private static readonly MIN_PANEL_WIDTH = 400;
+  private static readonly MIN_PANEL_HEIGHT = 450;
   private static readonly MAX_PANEL_WIDTH_RATIO = 0.65;
+  private static readonly MAX_FLOAT_PANEL_WIDTH_RATIO = 0.9;
+  private static readonly MAX_FLOAT_PANEL_HEIGHT_RATIO = 0.85;
 
   /**
    * Optional agent ID to activate when the panel loads.
@@ -81,12 +93,16 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    * and switch to this agent's tab automatically.
    */
   @Input() agentIdToActivate?: string;
+  @Input() panelMode: "dock" | "float" = "dock";
   @Output() panelWidthChange = new EventEmitter<number>();
 
   // Panel width. A width of 0 means the right dock is collapsed.
   width: number = 0; // Start with 0 to show docked button
+  height = Math.max(AgentPanelComponent.MIN_PANEL_HEIGHT, window.innerHeight * 0.7);
   private lastOpenWidth = AgentPanelComponent.MIN_PANEL_WIDTH;
+  private lastOpenHeight = Math.max(AgentPanelComponent.MIN_PANEL_HEIGHT, window.innerHeight * 0.7);
   private resizeAnimationFrameId = -1;
+  dragPosition = { x: 0, y: 0 };
 
   // Tab management
   selectedTabIndex: number = 0; // 0 = registration tab, 1+ = agent tabs
@@ -101,11 +117,47 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
     return this.width > 0;
   }
 
+  get isFloatingMode(): boolean {
+    return this.panelMode === "float";
+  }
+
   protected get maxPanelWidth(): number {
     return Math.max(
       AgentPanelComponent.MIN_PANEL_WIDTH,
       Math.floor(this.window.innerWidth * AgentPanelComponent.MAX_PANEL_WIDTH_RATIO)
     );
+  }
+
+  protected get maxFloatingPanelWidth(): number {
+    return Math.max(
+      AgentPanelComponent.MIN_PANEL_WIDTH,
+      Math.floor(this.window.innerWidth * AgentPanelComponent.MAX_FLOAT_PANEL_WIDTH_RATIO)
+    );
+  }
+
+  protected get maxPanelHeight(): number {
+    return Math.max(
+      AgentPanelComponent.MIN_PANEL_HEIGHT,
+      Math.floor(this.window.innerHeight * AgentPanelComponent.MAX_FLOAT_PANEL_HEIGHT_RATIO)
+    );
+  }
+
+  protected get resizeDirections(): NzResizeDirection[] {
+    return this.isFloatingMode
+      ? ["left", "right", "top", "bottom", "topLeft", "topRight", "bottomLeft", "bottomRight"]
+      : ["left"];
+  }
+
+  protected get currentMaxPanelWidth(): number {
+    return this.isFloatingMode ? this.maxFloatingPanelWidth : this.maxPanelWidth;
+  }
+
+  protected get currentMinPanelHeight(): number {
+    return this.isFloatingMode ? this.minPanelHeight : 0;
+  }
+
+  protected get currentMaxPanelHeight(): number {
+    return this.isFloatingMode ? this.maxPanelHeight : this.window.innerHeight;
   }
 
   ngOnInit(): void {
@@ -137,6 +189,9 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes["agentIdToActivate"] && this.agentIdToActivate) {
       this.tryActivateAgentFromInput();
+    }
+    if (changes["panelMode"]) {
+      this.setPanelWidth(this.width);
     }
   }
 
@@ -202,6 +257,9 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   public openPanel(): void {
     if (!this.isOpen) {
       this.setPanelWidth(this.lastOpenWidth);
+      if (this.isFloatingMode) {
+        this.height = this.lastOpenHeight;
+      }
     } else {
       this.setPanelWidth(0);
     }
@@ -317,14 +375,26 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   /**
    * Handle panel resize
    */
-  onResize({ width }: NzResizeEvent): void {
-    if (width === undefined) {
+  onResize({ width, height }: NzResizeEvent): void {
+    if (width === undefined && height === undefined) {
       return;
     }
     cancelAnimationFrame(this.resizeAnimationFrameId);
     this.resizeAnimationFrameId = requestAnimationFrame(() => {
-      this.setPanelWidth(width);
+      if (width !== undefined) {
+        this.setPanelWidth(width);
+      }
+      if (this.isFloatingMode && height !== undefined) {
+        this.height = this.clampPanelHeight(height);
+        this.lastOpenHeight = this.height;
+        this.savePanelSettings();
+      }
     });
+  }
+
+  onDragEnded(event: CdkDragEnd): void {
+    this.dragPosition = event.source.getFreeDragPosition();
+    this.savePanelSettings();
   }
 
   /**
@@ -332,11 +402,27 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    */
   private loadPanelSettings(): void {
     const savedWidth = localStorage.getItem("agent-panel-width");
+    const savedHeight = localStorage.getItem("agent-panel-height");
+    const savedDragX = localStorage.getItem("agent-panel-drag-x");
+    const savedDragY = localStorage.getItem("agent-panel-drag-y");
+
     if (savedWidth) {
       const parsedWidth = Number(savedWidth);
       if (!isNaN(parsedWidth)) {
-        this.lastOpenWidth = this.clampPanelWidth(parsedWidth);
+        this.lastOpenWidth = this.clampPanelWidth(parsedWidth, this.maxFloatingPanelWidth);
       }
+    }
+    if (savedHeight) {
+      const parsedHeight = Number(savedHeight);
+      if (!isNaN(parsedHeight)) {
+        this.lastOpenHeight = this.clampPanelHeight(parsedHeight);
+        this.height = this.lastOpenHeight;
+      }
+    }
+    const parsedDragX = Number(savedDragX);
+    const parsedDragY = Number(savedDragY);
+    if (!isNaN(parsedDragX) && !isNaN(parsedDragY)) {
+      this.dragPosition = { x: parsedDragX, y: parsedDragY };
     }
   }
 
@@ -345,22 +431,28 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
    */
   private savePanelSettings(): void {
     localStorage.setItem("agent-panel-width", String(this.lastOpenWidth));
-    localStorage.removeItem("agent-panel-height");
+    localStorage.setItem("agent-panel-height", String(this.lastOpenHeight));
+    localStorage.setItem("agent-panel-drag-x", String(this.dragPosition.x));
+    localStorage.setItem("agent-panel-drag-y", String(this.dragPosition.y));
     localStorage.removeItem("agent-panel-style");
     localStorage.removeItem("agent-panel-docked");
   }
 
   private setPanelWidth(width: number): void {
-    this.width = width === 0 ? 0 : this.clampPanelWidth(width);
+    this.width = width === 0 ? 0 : this.clampPanelWidth(width, this.currentMaxPanelWidth);
     if (this.isOpen) {
       this.lastOpenWidth = this.width;
     }
     this.savePanelSettings();
-    this.panelWidthChange.emit(this.width);
+    this.panelWidthChange.emit(this.isFloatingMode ? 0 : this.width);
     window.dispatchEvent(new Event("resize"));
   }
 
-  private clampPanelWidth(width: number): number {
-    return Math.min(Math.max(Math.round(width), AgentPanelComponent.MIN_PANEL_WIDTH), this.maxPanelWidth);
+  private clampPanelWidth(width: number, maxWidth: number): number {
+    return Math.min(Math.max(Math.round(width), AgentPanelComponent.MIN_PANEL_WIDTH), maxWidth);
+  }
+
+  private clampPanelHeight(height: number): number {
+    return Math.min(Math.max(Math.round(height), AgentPanelComponent.MIN_PANEL_HEIGHT), this.maxPanelHeight);
   }
 }
