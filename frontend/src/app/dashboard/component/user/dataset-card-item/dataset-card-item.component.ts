@@ -29,7 +29,7 @@ import { HubService } from "../../../../hub/service/hub.service";
 import { formatSize } from "../../../../common/util/size-formatter.util";
 import { formatCount, formatRelativeTime } from "../../../../common/util/format.util";
 import { isDefined } from "../../../../common/util/predicate";
-import { HUB_DATASET_RESULT_DETAIL, USER_DATASET } from "../../../../app-routing.constant";
+import { DASHBOARD_HUB_DATASET_RESULT_DETAIL, DASHBOARD_USER_DATASET } from "../../../../app-routing.constant";
 
 @UntilDestroy()
 @Component({
@@ -74,9 +74,9 @@ export class DatasetCardItemComponent implements OnChanges {
     const did = this.entry.id;
     const owners = this.entry.accessibleUserIds;
     if (this.currentUid !== undefined && owners.includes(this.currentUid)) {
-      this.entryLink = [USER_DATASET, String(did)];
+      this.entryLink = [DASHBOARD_USER_DATASET, String(did)];
     } else {
-      this.entryLink = [HUB_DATASET_RESULT_DETAIL, String(did)];
+      this.entryLink = [DASHBOARD_HUB_DATASET_RESULT_DETAIL, String(did)];
     }
 
     this.coverImageSrc = this.defaultCover;
