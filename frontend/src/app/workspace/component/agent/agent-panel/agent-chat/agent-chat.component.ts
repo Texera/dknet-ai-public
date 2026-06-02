@@ -234,11 +234,17 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
         takeUntil(this.stopWorkflowSubscription$),
         untilDestroyed(this)
       )
-      .subscribe(workflow => {
+      .subscribe(editedWorkflow => {
         // Never blank the canvas with an empty workflow.
-        if ((workflow.content?.operators?.length ?? 0) > 0) {
-          this.workflowActionService.reloadWorkflow(workflow, false, false);
+        if ((editedWorkflow.content?.operators?.length ?? 0) === 0) {
+          return;
         }
+        // The agent edits only the workflow CONTENT. Preserve the current workflow's
+        // metadata (id, name, ...) so the menu bar keeps the workflow name/id instead
+        // of resetting to "Untitled workflow" with no id.
+        const current = this.workflowActionService.getWorkflow();
+        const merged = current ? { ...current, content: editedWorkflow.content } : editedWorkflow;
+        this.workflowActionService.reloadWorkflow(merged, false, false);
       });
   }
 
