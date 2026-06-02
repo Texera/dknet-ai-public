@@ -68,6 +68,7 @@ import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/c
 import { persistWorkflow, retrieveWorkflow } from "../api/workflow-api";
 import { createLogger } from "../logger";
 import type { Logger } from "pino";
+import { limitToolExecutionOutputs } from "./tools/tools-utility";
 
 export interface TexeraAgentConfig {
   model: LanguageModel;
@@ -339,7 +340,7 @@ export class TexeraAgent {
 
     Object.assign(tools, createRemoteMcpTools(this.mcpToolRegistry));
 
-    return tools;
+    return limitToolExecutionOutputs(tools, () => this.settings.maxOperatorResultCharLimit);
   }
 
   getState(): AgentStateEnum {
@@ -619,6 +620,7 @@ export class TexeraAgent {
 
       let isFirstStep = true;
       let lastPreparedMessages: ModelMessage[] | undefined;
+      const includeWorkflowContext = taskContext.workflowId !== undefined && taskContext.computingUnitId !== undefined;
 
       // Pass only the current user turn; prepareStep rebuilds full context each step
       // (historical interactions + DAG + this message).
@@ -632,7 +634,7 @@ export class TexeraAgent {
         stopWhen: stepCountIs(this.settings.maxSteps),
         prepareStep: async ({ stepNumber, messages: currentMessages }) => {
           let compilationResult: WorkflowCompilationResponse | null = null;
-          if (this.workflowState.getAllOperators().length > 0) {
+          if (includeWorkflowContext && this.workflowState.getAllOperators().length > 0) {
             try {
               const logicalPlan = this.workflowState.toLogicalPlan();
               compilationResult = await compileWorkflowAsync(logicalPlan);
@@ -642,13 +644,12 @@ export class TexeraAgent {
           }
 
           const visibleSteps = this.getVisibleReActSteps();
-          const processed = assembleContext(
-            visibleSteps,
-            this.workflowState,
-            this.getFormattedResultsForDAG(),
-            false,
-            compilationResult
-          );
+          const processed = assembleContext(visibleSteps, this.workflowState, this.getFormattedResultsForDAG(), {
+            useRedact: false,
+            compilationResult,
+            includeWorkflowContext,
+            maxResolvedCharLimit: this.settings.maxOperatorResultCharLimit,
+          });
           lastPreparedMessages = processed;
           return { messages: processed };
         },
@@ -825,7 +826,15 @@ export class TexeraAgent {
     const result = new Map<string, string>();
     const visible = this.workflowResultState.getAllVisible();
     for (const [operatorId, entry] of visible) {
-      result.set(operatorId, formatOperatorResult(operatorId, entry.operatorInfo, this.workflowState));
+      result.set(
+        operatorId,
+        formatOperatorResult(
+          operatorId,
+          entry.operatorInfo,
+          this.workflowState,
+          this.settings.maxOperatorResultCharLimit
+        )
+      );
     }
     return result;
   }

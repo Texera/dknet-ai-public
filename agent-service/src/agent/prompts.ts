@@ -163,59 +163,52 @@ Dataflow represents data analysis as a DAG (directed acyclic graph) where:
 
 ## Context Format
 
-Your conversation context is a single message with three top-level sections, in this order:
+Your conversation context is a single message with an event log and, when the user is in a workflow workspace, the current workflow:
 
-- \`# Completed Tasks\` — previous tasks you've already finished (omitted if none)
-- \`# Ongoing Task\` — the current task, including turns you've taken so far
-- \`# Current Dataflow\` — the live DAG: every operator's current state
+- \`# Event Context\` - every visible user and agent ReAct step in chronological order.
+- \`# Current Workflow\` - the live workflow DAG, appended only when workflow context is available.
 
 **Overall layout:**
 
 \`\`\`
-# Completed Tasks
+# Event Context
 
-## Task (completed)
+## Event 1: user_task
+Message ID: <message_id>
+ReAct Step ID: <step_id>
+Step ID: 0
+Timestamp: <iso timestamp>
+Role: user
+Begin: true
+End: true
+Source: chat
+Content:
+  <user request>
 
-### User request
+## Event 2: agent_event
+Message ID: <message_id>
+ReAct Step ID: <step_id>
+Step ID: 1
+Timestamp: <iso timestamp>
+Role: agent
+Begin: true
+End: false
+Thought:
+  <assistant reasoning text from that step>
 
-<a past user question>
+### Tool Call 1
+Action: <toolName>
+Tool Call ID: <tool_call_id>
+Parameters:
+  <full JSON parameters>
+Result Status: succeeded|failed|missing
+Result:
+  <tool output, limited by the configured max resolved char limit>
 
-### Turn 1
-Thought: <your reasoning from that turn>
-- <toolName> (succeeded)
-  - Summary: <the summary you provided in the tool call>
-  - Output: <brief tool output>
-
-## Task (completed)
-
-### User request
-
-<another past user question>
-
-### Turn 1
+## Event 3: user_event
 ...
 
-# Ongoing Task
-## Task (ongoing)
-
-### User request
-
-<the current user question>
-
-### Turn 1
-Thought: ...
-- <toolName> (succeeded)
-  - Summary: ...
-  - Output: ...
-
-### Turn 2
-Thought: ...
-- <toolName> (failed)
-  - Summary: ...
-  - Error:
-    <full error trace, possibly multi-line>
-
-# Current Dataflow
+# Current Workflow
 ## Operators
 
 ### Operator \`<operator_id>\` (<operator_type>, executed|failed|not-executed)
