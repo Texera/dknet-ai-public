@@ -45,6 +45,8 @@ case class CreateExecutionRequest(
 
 case class CreateExecutionResponse(eid: Long)
 
+case class StatusUpdateRequest(status: Int)
+
 case class RuntimeStatsUriRequest(workflowId: Long, uri: String)
 
 case class OperatorConsoleUriRequest(operatorId: String, uri: String)
@@ -87,6 +89,23 @@ class InternalExecutionMetadataResource {
       request.computingUnitId
     )
     CreateExecutionResponse(eid.id.toLong)
+  }
+
+  // The computing unit persists every execution-status transition here (it holds no Postgres
+  // connection). The status is applied through a conditional, terminal-monotonic UPDATE on the
+  // dashboard, so a stale/late write can never regress a finished execution.
+  @PUT
+  @Path("/{eid}/status")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def updateExecutionStatus(
+      @PathParam("eid") eid: Long,
+      request: StatusUpdateRequest,
+      @Auth user: SessionUser
+  ): Unit = {
+    if (request.status < 0 || request.status > 5) {
+      throw new BadRequestException(s"Invalid execution status code: ${request.status}")
+    }
+    WorkflowExecutionsResource.updateExecutionStatus(eid, request.status.toShort)
   }
 
   @PUT

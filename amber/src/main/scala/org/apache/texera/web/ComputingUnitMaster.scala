@@ -28,8 +28,10 @@ import io.dropwizard.websockets.WebsocketBundle
 import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.workflow.{PhysicalPlan, WorkflowContext}
 import org.apache.texera.amber.engine.architecture.controller.ControllerConfig
+import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState.KILLED
 import org.apache.texera.amber.engine.common.client.AmberClient
 import org.apache.texera.amber.engine.common.{AmberRuntime, Utils}
+import org.apache.texera.amber.engine.common.Utils.maptoStatusCode
 import org.apache.texera.amber.util.{ObjectMapperUtils, PhysicalPlanSerdeModule}
 import org.apache.commons.jcs3.access.exception.InvalidArgumentException
 import org.apache.texera.web.resource.{
@@ -37,6 +39,7 @@ import org.apache.texera.web.resource.{
   WebsocketPayloadSizeTuner,
   WorkflowWebsocketResource
 }
+import org.apache.texera.web.service.{ExecutionsMetadataPersistService, WorkflowService}
 import org.eclipse.jetty.server.session.SessionHandler
 import org.eclipse.jetty.servlet.FilterHolder
 import org.eclipse.jetty.websocket.server.WebSocketUpgradeFilter
@@ -44,8 +47,8 @@ import org.apache.texera.web.resource.pythonvirtualenvironment.PveResource
 import org.apache.texera.web.resource.pythonvirtualenvironment.PveWebsocketResource
 
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.annotation.tailrec
-import scala.concurrent.duration.DurationInt
 
 object ComputingUnitMaster {
 
@@ -102,6 +105,40 @@ object ComputingUnitMaster {
 
 class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with LazyLogging {
 
+  private val shutdownFlushed = new AtomicBoolean(false)
+
+  /**
+    * On graceful CU shutdown, finalize any execution still in a non-terminal state as KILLED. The CU
+    * is going away, so an orphaned RUNNING/READY/PAUSED row would otherwise lock its workflow until
+    * the staleness window elapsed; flushing it makes the unlock immediate. The write goes through the
+    * same conditional, terminal-monotonic UPDATE, so a genuinely-finished run (already terminal) is
+    * left untouched. Best-effort: a hard kill (SIGKILL/OOM) runs no hook and is handled by lazy
+    * on-read staleness instead.
+    */
+  private def flushNonTerminalExecutions(): Unit = {
+    if (!shutdownFlushed.compareAndSet(false, true)) return
+    // Snapshot the registry so a concurrent lifecycle-cleanup removal can't perturb the iteration.
+    WorkflowService.getAllWorkflowServices.toList.foreach { ws =>
+      try {
+        Option(ws.executionService.getValue).foreach { execService =>
+          val code = maptoStatusCode(execService.executionStateStore.metadataStore.getState.state)
+          if (code >= 0 && code < 3) {
+            // Single-shot (no retry) under the shutdown deadline; lazy on-read staleness is the
+            // backstop for any execution whose flush does not reach the dashboard in time.
+            ExecutionsMetadataPersistService.updateExecutionStatus(
+              execService.workflowContext.executionId,
+              maptoStatusCode(KILLED).toShort,
+              retryTerminal = false
+            )
+          }
+        }
+      } catch {
+        case t: Throwable =>
+          logger.warn(s"Best-effort shutdown status flush failed: ${t.getMessage}")
+      }
+    }
+  }
+
   override def initialize(bootstrap: Bootstrap[Configuration]): Unit = {
     // enable environment variable substitution in YAML config
     bootstrap.setConfigurationSourceProvider(
@@ -126,6 +163,15 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
 
   override def run(configuration: Configuration, environment: Environment): Unit = {
     ObjectMapperUtils.warmupObjectMapperForOperatorsSerde()
+
+    // On graceful shutdown, finalize any still-running execution so a departing CU does not leave a
+    // workflow locked until the staleness window elapses.
+    environment
+      .lifecycle()
+      .manage(new io.dropwizard.lifecycle.Managed {
+        override def start(): Unit = {}
+        override def stop(): Unit = flushNonTerminalExecutions()
+      })
 
     // The Computing Unit never connects to Postgres: it routes execution-metadata operations over
     // HTTP to the dashboard service and holds no database credentials of its own (issue #5011).

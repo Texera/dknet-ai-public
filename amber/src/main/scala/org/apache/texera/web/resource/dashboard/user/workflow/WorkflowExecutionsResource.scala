@@ -28,6 +28,7 @@ import org.apache.texera.amber.core.storage.{
 }
 import org.apache.texera.amber.core.tuple.Tuple
 import org.apache.texera.amber.core.virtualidentity._
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.workflow.{GlobalPortIdentity, PortIdentity}
 import org.apache.texera.amber.engine.architecture.logreplay.{ReplayDestination, ReplayLogRecord}
 import org.apache.texera.amber.engine.common.Utils.{maptoStatusCode, stringToAggregatedState}
@@ -49,6 +50,7 @@ import org.apache.texera.web.service.{
   ResultExportService
 }
 import org.jooq.DSLContext
+import org.jooq.impl.DSL
 import play.api.libs.json.Json
 
 import java.net.URI
@@ -323,6 +325,36 @@ object WorkflowExecutionsResource {
       .execute()
   }
 
+  /**
+    * The terminal execution status codes (COMPLETED, FAILED, KILLED) — once a row reaches any of
+    * these it is final and must never move again. Kept in sync with [[maptoStatusCode]].
+    */
+  private val terminalStatusCodes: Set[Short] = Set(3, 4, 5)
+
+  /**
+    * Persist an execution's status, atomically and monotonically, in a single statement.
+    *
+    * The `STATUS NOT IN (terminal)` guard makes terminal states absorbing at the row level under
+    * Postgres's own row lock: once an execution is COMPLETED/FAILED/KILLED, no later write — a late
+    * or duplicate RUNNING from a racing controller thread, a retried flush, or a node-failure FAILED
+    * arriving after a clean COMPLETED — can move it. This is the no-regression guarantee, and it does
+    * not depend on any ordering of the (multi-threaded, unguarded) state-update callbacks on the CU.
+    * It also makes every write idempotent, which is what lets the terminal flush be retried safely.
+    *
+    * `LAST_UPDATE_TIME` is stamped from the database clock so the staleness math in
+    * [[getWorkflowExecutions]] is immune to CU/dashboard clock skew. Runs only where Postgres lives
+    * (the dashboard service); the CU routes here over HTTP via [[RemoteExecutionMetadata]].
+    */
+  def updateExecutionStatus(eid: Long, statusCode: Short): Unit = {
+    context
+      .update(WORKFLOW_EXECUTIONS)
+      .set(WORKFLOW_EXECUTIONS.STATUS, Short.box(statusCode))
+      .set(WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME, DSL.currentTimestamp())
+      .where(WORKFLOW_EXECUTIONS.EID.eq(eid.toInt))
+      .and(WORKFLOW_EXECUTIONS.STATUS.notIn(terminalStatusCodes.map(Short.box).asJava))
+      .execute()
+  }
+
   def getResultUrisByExecutionId(eid: ExecutionIdentity): List[URI] = {
     if (RemoteExecutionMetadata.enabled) {
       return RemoteExecutionMetadata.getResultUrisByExecutionId(eid.id.toLong)
@@ -374,6 +406,31 @@ object WorkflowExecutionsResource {
       condition = condition.and(
         WORKFLOW_EXECUTIONS.STATUS.in(statusCodes.map(Byte.box).asJava)
       )
+    }
+
+    // Lazy on-read reconciliation: when this query asks ONLY for non-terminal statuses — i.e. it is
+    // the "is there an ongoing execution?" check that locks workflow editing — drop rows that have
+    // gone stale. A running execution heartbeats its status (see ExecutionStatsService), so a live
+    // run keeps a fresh LAST_UPDATE_TIME; a row that has not been updated within the staleness window
+    // belongs to a computing unit that died without flushing a terminal status, and must not lock the
+    // workflow forever. Terminal and full-history queries are unaffected.
+    if (statusCodes.nonEmpty && statusCodes.subsetOf(Set[Byte](0, 1, 2))) {
+      val deadline = new Timestamp(
+        System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(
+          ApplicationConfig.executionOngoingStaleAfterSeconds
+        )
+      )
+      // Keep only rows still "fresh": updated within the window, or — if never updated yet —
+      // started within it. Expressed in positive form on purpose: the negation form
+      // NOT(stale) evaluates to SQL NULL for a row whose LAST_UPDATE_TIME is null and would
+      // silently drop a just-started run before its first status write lands.
+      val fresh = WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME
+        .ge(deadline)
+        .or(
+          WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME.isNull
+            .and(WORKFLOW_EXECUTIONS.STARTING_TIME.ge(deadline))
+        )
+      condition = condition.and(fresh)
     }
 
     context

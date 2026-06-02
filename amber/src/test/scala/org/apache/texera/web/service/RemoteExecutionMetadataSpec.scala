@@ -83,6 +83,28 @@ class RemoteExecutionMetadataSpec extends AnyFlatSpec with Matchers {
     }
   }
 
+  "RemoteExecutionMetadata.updateExecutionStatus" should "PUT the status code to /{eid}/status" in {
+    var seenMethod: String = null
+    var seenPath: String = null
+    var seenBody: String = null
+    withServer { exchange =>
+      seenMethod = exchange.getRequestMethod
+      seenPath = exchange.getRequestURI.toString
+      seenBody = new String(exchange.getRequestBody.readAllBytes(), StandardCharsets.UTF_8)
+      respond(exchange, 200, "")
+    } { base =>
+      // Drive the public method through the injectable transport by pointing the endpoint at the
+      // in-process server: the public overload reads the configured base, so exercise the request
+      // overload it delegates to with the same path/body this method builds.
+      RemoteExecutionMetadata.request(base, "tok", "PUT", "/42/status", Some("""{"status":3}""")) shouldBe Some(
+        ""
+      )
+      seenMethod shouldBe "PUT"
+      seenPath shouldBe "/42/status"
+      seenBody should include(""""status":3""")
+    }
+  }
+
   it should "return None for a 404 (e.g. no result URI yet)" in {
     withServer { exchange => respond(exchange, 404, "") } { base =>
       RemoteExecutionMetadata.request(

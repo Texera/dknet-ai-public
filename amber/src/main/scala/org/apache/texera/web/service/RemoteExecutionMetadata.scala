@@ -98,6 +98,17 @@ object RemoteExecutionMetadata {
     ExecutionIdentity(eid)
   }
 
+  /**
+    * Persist an execution's status code on the dashboard service. The dashboard applies it through a
+    * conditional, terminal-monotonic UPDATE (see WorkflowExecutionsResource.updateExecutionStatus),
+    * so this call is idempotent and safe to retry.
+    */
+  def updateExecutionStatus(eid: Long, statusCode: Short): Unit = {
+    val body = objectMapper.createObjectNode()
+    body.put("status", statusCode.toInt)
+    request(tokenFor(eid), "PUT", s"/$eid/status", Some(body.toString))
+  }
+
   def updateRuntimeStatsUri(wid: Long, eid: Long, uri: URI): Unit = {
     val body = objectMapper.createObjectNode()
     body.put("workflowId", wid)
@@ -172,6 +183,11 @@ object RemoteExecutionMetadata {
   ): Option[String] = {
     val connection = new URL(baseEndpoint + path).openConnection().asInstanceOf[HttpURLConnection]
     connection.setRequestMethod(method)
+    // Bound the blocking time: these calls run on the controller/stats/shutdown threads (the heartbeat
+    // and terminal flush among them), so an unresponsive dashboard must fail fast rather than wedge a
+    // thread or delay CU shutdown. The payloads are tiny, so these are generous.
+    connection.setConnectTimeout(5000)
+    connection.setReadTimeout(10000)
     connection.setRequestProperty("Authorization", s"Bearer $token")
     connection.setRequestProperty("Content-Type", "application/json")
     try {
