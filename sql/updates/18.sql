@@ -23,8 +23,8 @@ SET search_path TO texera_db;
 
 BEGIN;
 
--- 1. Add new column cover_image to dataset table.
+-- Remove the deprecated dataset cover image column.
 ALTER TABLE dataset
-    ADD COLUMN cover_image varchar(246);
+    DROP COLUMN IF EXISTS cover_image;
 
 COMMIT;
