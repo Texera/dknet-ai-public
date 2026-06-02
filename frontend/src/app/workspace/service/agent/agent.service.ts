@@ -27,6 +27,7 @@ import {
   filter,
   map,
   of,
+  EMPTY,
   shareReplay,
   defer,
   throwError,
@@ -150,7 +151,15 @@ interface AgentStateTracking {
   }>;
   /** Current HEAD step ID in the version tree */
   headIdSubject: BehaviorSubject<string | null>;
+  /** Latest known workflow snapshot (set by init/step/headChange/poll, read for metadata). */
   workflowSubject: BehaviorSubject<Workflow | null>;
+  /**
+   * Fires only on a *genuine* workflow edit by this agent — a ReAct step that
+   * changed the workflow, or an explicit version checkout (headChange). Unlike
+   * workflowSubject this is a plain Subject (no replay) and is NOT fired on init or
+   * DB polling, so subscribing to it on tab-switch never reloads/clobbers the canvas.
+   */
+  workflowEditSubject: Subject<Workflow>;
   workflowId?: number;
   stopPolling$: Subject<void>;
   /** When true, workflow updates come from WS — polling is suppressed */
@@ -444,6 +453,7 @@ export class AgentService {
         }>({ viewedOperatorIds: [], addedOperatorIds: [], modifiedOperatorIds: [] }),
         headIdSubject: new BehaviorSubject<string | null>(null),
         workflowSubject: new BehaviorSubject<Workflow | null>(null),
+        workflowEditSubject: new Subject<Workflow>(),
         workflowId,
         stopPolling$: new Subject<void>(),
         wsWorkflowActive: false,
@@ -595,6 +605,8 @@ export class AgentService {
               content: convertedStep.afterWorkflowContent,
             } as Workflow;
             tracking.workflowSubject.next(workflow);
+            // A real edit by this agent — drive the live canvas update.
+            tracking.workflowEditSubject.next(workflow);
           }
         }
         break;
@@ -634,6 +646,8 @@ export class AgentService {
             content: message.workflowContent,
           };
           tracking.workflowSubject.next(workflow as Workflow);
+          // An explicit version checkout — reflect that version on the canvas.
+          tracking.workflowEditSubject.next(workflow as Workflow);
         }
         // Update operator results on HEAD change
         if (message.operatorResults) {
@@ -1166,6 +1180,20 @@ export class AgentService {
       return tracking.workflowSubject.asObservable();
     }
     return of(null);
+  }
+
+  /**
+   * Stream of genuine workflow edits made by this agent (a ReAct step that changed
+   * the workflow, or a version checkout). Unlike {@link getWorkflowObservable} it
+   * does not replay a snapshot on subscribe and is not fed by init/polling, so a
+   * consumer can drive the canvas from it without reloading on tab-switch.
+   */
+  public getWorkflowEditObservable(agentId: string): Observable<Workflow> {
+    const tracking = this.agentStateTracking.get(agentId);
+    if (tracking) {
+      return tracking.workflowEditSubject.asObservable();
+    }
+    return EMPTY;
   }
 
   /**

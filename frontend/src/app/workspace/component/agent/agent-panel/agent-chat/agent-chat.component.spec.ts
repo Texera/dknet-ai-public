@@ -19,11 +19,10 @@
 
 import { ChangeDetectorRef } from "@angular/core";
 import { NavigationEnd, Router } from "@angular/router";
-import { BehaviorSubject, Subject, of } from "rxjs";
+import { BehaviorSubject, EMPTY, Subject, of } from "rxjs";
 
 import { ComputingUnitStatusService } from "../../../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
 import { DashboardWorkflowComputingUnit } from "../../../../../common/type/workflow-computing-unit";
-import { WorkflowPersistService } from "../../../../../common/service/workflow-persist/workflow-persist.service";
 import { NotificationService } from "../../../../../common/service/notification/notification.service";
 import { AgentInfo, AgentService } from "../../../../service/agent/agent.service";
 import { AgentState, ReActStep } from "../../../../service/agent/agent-types";
@@ -64,7 +63,7 @@ describe("AgentChatComponent", () => {
         getAgentStateObservable: vi.fn(() => agentStateSubject.asObservable()),
         getReActStepsObservable: vi.fn(() => reactStepsSubject.asObservable()),
         getHeadIdObservable: vi.fn(() => headIdSubject.asObservable()),
-        getWorkflowObservable: vi.fn(() => of(null)),
+        getWorkflowEditObservable: vi.fn(() => EMPTY),
         scrollToStep$: new Subject<{ agentId: string; messageId: string; stepId: number }>(),
         setHoveredMessage: vi.fn(),
       } as unknown as AgentService,
@@ -81,9 +80,6 @@ describe("AgentChatComponent", () => {
       {
         detectChanges: vi.fn(),
       } as unknown as ChangeDetectorRef,
-      {
-        setWorkflowPersistFlag: vi.fn(),
-      } as unknown as WorkflowPersistService,
       routerMock as Router,
       {
         getSelectedComputingUnit: vi.fn(() => computingUnitSubject.asObservable()),

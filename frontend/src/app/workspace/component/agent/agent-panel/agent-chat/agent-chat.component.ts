@@ -32,12 +32,11 @@ import {
 import { NavigationEnd, Router } from "@angular/router";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { Subject } from "rxjs";
-import { distinctUntilChanged, filter, pairwise, startWith, takeUntil } from "rxjs/operators";
+import { distinctUntilChanged, filter, takeUntil } from "rxjs/operators";
 import { AgentState, ReActStep } from "../../../../service/agent/agent-types";
 import { AgentInfo, AgentService } from "../../../../service/agent/agent.service";
 import { WorkflowActionService } from "../../../../service/workflow-graph/model/workflow-action.service";
 import { NotificationService } from "../../../../../common/service/notification/notification.service";
-import { WorkflowPersistService } from "../../../../../common/service/workflow-persist/workflow-persist.service";
 import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
 import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
@@ -103,9 +102,6 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   // Current HEAD step ID in the version tree
   public currentHeadId: string | null = null;
 
-  // Track if we disabled auto-persist so we can re-enable it on destroy
-  private disabledAutoPersist = false;
-
   // Subject to control workflow subscription lifecycle
   private stopWorkflowSubscription$ = new Subject<void>();
   private currentUrl = "";
@@ -116,7 +112,6 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     private workflowActionService: WorkflowActionService,
     private notificationService: NotificationService,
     private cdr: ChangeDetectorRef,
-    private workflowPersistService: WorkflowPersistService,
     private router: Router,
     private computingUnitStatusService: ComputingUnitStatusService
   ) {}
@@ -186,27 +181,10 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
         this.cdr.detectChanges();
       });
 
-    // Subscribe to agent state changes to manage auto-persist
-    // Disable auto-persist when agent is GENERATING, re-enable when AVAILABLE
-    this.agentService
-      .getAgentStateObservable(this.agentInfo.id)
-      .pipe(startWith(AgentState.UNAVAILABLE), pairwise(), untilDestroyed(this))
-      .subscribe(([previousState, currentState]) => {
-        // When agent starts generating, disable auto-persist
-        if (currentState === AgentState.GENERATING && previousState !== AgentState.GENERATING) {
-          this.workflowPersistService.setWorkflowPersistFlag(false);
-          this.disabledAutoPersist = true;
-        }
-
-        // When agent finishes (becomes AVAILABLE from GENERATING/STOPPING), re-enable auto-persist
-        if (
-          currentState === AgentState.AVAILABLE &&
-          (previousState === AgentState.GENERATING || previousState === AgentState.STOPPING)
-        ) {
-          this.workflowPersistService.setWorkflowPersistFlag(true);
-          this.disabledAutoPersist = false;
-        }
-      });
+    // Auto-persist is intentionally left enabled while the agent runs: the agent
+    // streams its edits onto the canvas, and the frontend's normal auto-persist then
+    // saves them to the backend (the single source of truth). The agent also persists
+    // at task completion as a backstop.
 
     // Note: Workflow subscription is started/stopped via ngOnChanges based on isActive
     // This prevents automatic workflow switching when multiple agents are running
@@ -246,20 +224,19 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     // Stop any existing subscription first
     this.stopWorkflowSubscription$.next();
 
+    // Drive the canvas from genuine edits this agent makes (steps / version
+    // checkouts) — NOT from a replayed snapshot or DB poll. This is why merely
+    // switching to this tab no longer reloads (and used to wipe) the canvas.
     this.agentService
-      .getWorkflowObservable(this.agentInfo.id)
+      .getWorkflowEditObservable(this.agentInfo.id)
       .pipe(
-        filter(workflow => workflow !== null),
-        distinctUntilChanged((prev, curr) => {
-          // Compare workflow content to avoid unnecessary reloads
-          if (!prev || !curr) return false;
-          return JSON.stringify(prev.content) === JSON.stringify(curr.content);
-        }),
+        distinctUntilChanged((prev, curr) => JSON.stringify(prev?.content) === JSON.stringify(curr?.content)),
         takeUntil(this.stopWorkflowSubscription$),
         untilDestroyed(this)
       )
       .subscribe(workflow => {
-        if (workflow) {
+        // Never blank the canvas with an empty workflow.
+        if ((workflow.content?.operators?.length ?? 0) > 0) {
           this.workflowActionService.reloadWorkflow(workflow, false, false);
         }
       });
@@ -277,11 +254,6 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     // Stop workflow subscription
     this.stopWorkflowSubscription$.next();
     this.stopWorkflowSubscription$.complete();
-
-    // Re-enable auto-persist if we disabled it
-    if (this.disabledAutoPersist) {
-      this.workflowPersistService.setWorkflowPersistFlag(true);
-    }
   }
 
   ngAfterViewChecked(): void {
