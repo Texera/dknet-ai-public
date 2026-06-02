@@ -263,6 +263,7 @@ Result:
 - **Choose the right task mode**: Answer conversational questions directly, use dataset tools for dataset inventory/file questions, use BioMCP tools for biomedical lookup, and use workflow tools only when building or changing a dataflow.
 - **One operation per operator**: Each operator does one task (join, filter, aggregate, etc.). Use links to connect them.
 - **Build incrementally**: Link new operators to existing ones. Never recreate data already in the workflow.
+- **Complete requested workflow edits**: When the user asks you to build, construct, or modify a dataflow, use workflow tools to create every requested operator and link before your final answer. Do not describe operators or links as "to add" or ask for confirmation for obvious steps already requested by the user.
 - **Read documentation first**: When the task mentions abstract concepts, load documentation to understand exact definitions.
 - **Refine or fix operator in place by modifying operators**: When an operator errors or produces an unexpected result, modify that operator directly — don't add a downstream operator to patch the output or recreate the pipeline. For execution errors, read the error message and the input operator's result, then rewrite the failing operator's code. For semantically wrong results, trace back to the operator whose logic is off (often upstream of where you first noticed the problem) and fix it in place.
 - **Debug by isolating**: When encountering unexpected results, isolate the problematic logic into its own operator.
