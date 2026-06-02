@@ -22,50 +22,71 @@
   <!-- Toolbar -->
   <div class="chat-toolbar">
     <div class="chat-toolbar-controls">
-      <!-- Agent model info with state icon -->
-      <div class="toolbar-item">
-        <i
-          nz-icon
-          [nzType]="getStateIcon()"
-          [nzSpin]="isGenerating()"
-          nz-tooltip
-          [nzTooltipTitle]="getStateTooltip()"
-          [style.color]="getStateIconColor()"
-          style="font-size: 16px; margin-right: 6px; vertical-align: middle"></i>
-        <small style="color: #888"> Model: <strong>{{ agentInfo.modelType }}</strong> </small>
-      </div>
-
-      <!-- Export ReAct steps button -->
-      <div class="toolbar-item">
-        <button
-          nz-button
-          nzType="text"
-          nzSize="small"
-          (click)="exportReActSteps()"
-          nz-tooltip
-          nzTooltipTitle="Export ReAct steps as JSON">
+      <div class="toolbar-left">
+        <!-- Agent model info with state icon -->
+        <div class="toolbar-item">
           <i
             nz-icon
-            nzType="file-done"
-            nzTheme="outline"></i>
-        </button>
-      </div>
+            [nzType]="getStateIcon()"
+            [nzSpin]="isGenerating()"
+            nz-tooltip
+            [nzTooltipTitle]="getStateTooltip()"
+            [style.color]="getStateIconColor()"
+            style="font-size: 16px; margin-right: 6px; vertical-align: middle"></i>
+          <small style="color: #888"> Model: <strong>{{ agentInfo.modelType }}</strong> </small>
+        </div>
 
-      <!-- Clear button (when available) -->
-      <div class="toolbar-item">
-        <button
-          *ngIf="isAvailable()"
-          nz-button
-          nzType="text"
-          nzSize="small"
-          (click)="clearMessages()"
+        <div
+          *ngIf="workspaceContextBadge"
+          class="workspace-context-badge"
           nz-tooltip
-          nzTooltipTitle="Clear chat history">
+          [nzTooltipTitle]="getWorkspaceContextTooltip()">
           <i
             nz-icon
-            nzType="delete"
+            nzType="deployment-unit"
             nzTheme="outline"></i>
-        </button>
+          <span> Workflow: <strong>{{ workspaceContextBadge.workflowId }}</strong> </span>
+          <span class="context-divider"></span>
+          <span>
+            Computing Unit:
+            <strong>{{ workspaceContextBadge.computingUnitId ?? 'none' }}</strong>
+          </span>
+        </div>
+      </div>
+
+      <div class="toolbar-actions">
+        <!-- Export ReAct steps button -->
+        <div class="toolbar-item">
+          <button
+            nz-button
+            nzType="text"
+            nzSize="small"
+            (click)="exportReActSteps()"
+            nz-tooltip
+            nzTooltipTitle="Export ReAct steps as JSON">
+            <i
+              nz-icon
+              nzType="file-done"
+              nzTheme="outline"></i>
+          </button>
+        </div>
+
+        <!-- Clear button (when available) -->
+        <div class="toolbar-item">
+          <button
+            *ngIf="isAvailable()"
+            nz-button
+            nzType="text"
+            nzSize="small"
+            (click)="clearMessages()"
+            nz-tooltip
+            nzTooltipTitle="Clear chat history">
+            <i
+              nz-icon
+              nzType="delete"
+              nzTheme="outline"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>

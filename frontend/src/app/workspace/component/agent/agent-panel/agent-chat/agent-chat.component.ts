@@ -29,6 +29,7 @@ import {
   OnChanges,
   SimpleChanges,
 } from "@angular/core";
+import { NavigationEnd, Router } from "@angular/router";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { Subject } from "rxjs";
 import { distinctUntilChanged, filter, pairwise, startWith, takeUntil } from "rxjs/operators";
@@ -49,6 +50,15 @@ import { NzInputDirective, NzAutosizeDirective } from "ng-zorro-antd/input";
 import { FormsModule } from "@angular/forms";
 import { NzWaveDirective } from "ng-zorro-antd/core/wave";
 import { ReActStepDetailModalComponent } from "../react-step-detail-modal/react-step-detail-modal.component";
+import { ComputingUnitStatusService } from "../../../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
+import { DashboardWorkflowComputingUnit } from "../../../../../common/type/workflow-computing-unit";
+
+interface WorkspaceContextBadge {
+  workflowId: number;
+  computingUnitId?: number;
+  computingUnitName?: string;
+  computingUnitStatus?: string;
+}
 
 @UntilDestroy()
 @Component({
@@ -88,6 +98,7 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   public selectedResponse: ReActStep | null = null;
   public hoveredMessageIndex: number | null = null;
   public agentState: AgentState = AgentState.UNAVAILABLE;
+  public workspaceContextBadge: WorkspaceContextBadge | null = null;
 
   // Current HEAD step ID in the version tree
   public currentHeadId: string | null = null;
@@ -97,19 +108,25 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
 
   // Subject to control workflow subscription lifecycle
   private stopWorkflowSubscription$ = new Subject<void>();
+  private currentUrl = "";
+  private selectedComputingUnit: DashboardWorkflowComputingUnit | null = null;
 
   constructor(
     private agentService: AgentService,
     private workflowActionService: WorkflowActionService,
     private notificationService: NotificationService,
     private cdr: ChangeDetectorRef,
-    private workflowPersistService: WorkflowPersistService
+    private workflowPersistService: WorkflowPersistService,
+    private router: Router,
+    private computingUnitStatusService: ComputingUnitStatusService
   ) {}
 
   ngOnInit(): void {
     if (!this.agentInfo) {
       return;
     }
+
+    this.registerWorkspaceContextBadge();
 
     // Get the current state from manager service
     this.agentService
@@ -406,6 +423,95 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
 
   public clearMessages(): void {
     this.agentService.clearMessages(this.agentInfo.id);
+  }
+
+  public getWorkspaceContextTooltip(): string {
+    if (!this.workspaceContextBadge) {
+      return "";
+    }
+
+    const workflowText = `workflow ID ${this.workspaceContextBadge.workflowId}`;
+    if (this.workspaceContextBadge.computingUnitId === undefined) {
+      return `Next message will include ${workflowText}. No computing unit is currently selected.`;
+    }
+
+    const unitName = this.workspaceContextBadge.computingUnitName
+      ? ` (${this.workspaceContextBadge.computingUnitName})`
+      : "";
+    return `Next message will include ${workflowText} and computing unit ID ${this.workspaceContextBadge.computingUnitId}${unitName}.`;
+  }
+
+  private registerWorkspaceContextBadge(): void {
+    this.currentUrl = this.router.url;
+    this.refreshWorkspaceContextBadge();
+
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        untilDestroyed(this)
+      )
+      .subscribe(event => {
+        this.currentUrl = event.urlAfterRedirects;
+        this.refreshWorkspaceContextBadge();
+      });
+
+    this.workflowActionService
+      .workflowMetaDataChanged()
+      .pipe(untilDestroyed(this))
+      .subscribe(() => {
+        this.refreshWorkspaceContextBadge();
+      });
+
+    this.computingUnitStatusService
+      .getSelectedComputingUnit()
+      .pipe(untilDestroyed(this))
+      .subscribe(unit => {
+        this.selectedComputingUnit = unit;
+        this.refreshWorkspaceContextBadge();
+      });
+  }
+
+  private refreshWorkspaceContextBadge(): void {
+    if (!this.isWorkspacePage(this.currentUrl)) {
+      this.workspaceContextBadge = null;
+      return;
+    }
+
+    const workflowId = this.getWorkspaceWorkflowId();
+    if (workflowId === undefined) {
+      this.workspaceContextBadge = null;
+      return;
+    }
+
+    this.workspaceContextBadge = {
+      workflowId,
+      computingUnitId: this.selectedComputingUnit?.computingUnit.cuid,
+      computingUnitName: this.selectedComputingUnit?.computingUnit.name,
+      computingUnitStatus: this.selectedComputingUnit?.status,
+    };
+  }
+
+  private getWorkspaceWorkflowId(): number | undefined {
+    const routeWorkflowId = this.getRouteWorkflowId(this.currentUrl);
+    if (routeWorkflowId !== undefined) {
+      return routeWorkflowId;
+    }
+
+    const metadataWorkflowId = this.workflowActionService.getWorkflowMetadata()?.wid;
+    return metadataWorkflowId !== undefined && metadataWorkflowId > 0 ? metadataWorkflowId : undefined;
+  }
+
+  private getRouteWorkflowId(url: string): number | undefined {
+    const match = url.match(/^\/dashboard\/user\/workflow\/(\d+)(?:[/?#]|$)/);
+    if (!match) {
+      return undefined;
+    }
+    const workflowId = Number(match[1]);
+    return Number.isFinite(workflowId) && workflowId > 0 ? workflowId : undefined;
+  }
+
+  private isWorkspacePage(url: string): boolean {
+    return this.getRouteWorkflowId(url) !== undefined;
   }
 
   /**
