@@ -175,10 +175,9 @@ describe(`POST ${API}/agents`, () => {
     expect(res.status).toBe(200);
     const created = await readJson<{ id: string }>(res);
 
-    const systemInfo = await readJson<{
-      tools: Array<{ name: string }>;
-    }>(await getJson(`${API}/agents/${created.id}/system-info`));
-    const toolNames = systemInfo.tools.map(tool => tool.name);
+    const agent = _getAgentForTests(created.id);
+    expect(agent).toBeDefined();
+    const toolNames = agent!.getSystemInfo().tools.map(tool => tool.name);
     expect(toolNames).not.toContain("listDatasets");
     expect(toolNames).not.toContain("listDatasetVersions");
     expect(toolNames).not.toContain("listDatasetFiles");
@@ -193,14 +192,43 @@ describe(`POST ${API}/agents`, () => {
     expect(agent).toBeDefined();
     await applyAgentRequestContext(created.id, agent!, { userToken: tokenFor(1) });
 
-    const systemInfo = await readJson<{
-      tools: Array<{ name: string }>;
-    }>(await getJson(`${API}/agents/${created.id}/system-info`));
-    const toolNames = systemInfo.tools.map(tool => tool.name);
+    const toolNames = agent!.getSystemInfo().tools.map(tool => tool.name);
     expect(toolNames).toContain("listDatasets");
     expect(toolNames).toContain("listDatasetVersions");
     expect(toolNames).toContain("listDatasetFiles");
     expect(toolNames).not.toContain("executeOperator");
+  });
+
+  test("does not expose settings in agent API responses", async () => {
+    const created = await readJson<{ id: string; settings?: unknown }>(
+      await postJson(`${API}/agents`, { modelType: "m", name: "public" })
+    );
+    expect(created.settings).toBeUndefined();
+
+    const res = await getJson(`${API}/agents/${created.id}`);
+    expect(res.status).toBe(200);
+    const body = await readJson<{ settings?: unknown }>(res);
+    expect(body.settings).toBeUndefined();
+  });
+
+  test("ignores attempted settings payloads during agent creation", async () => {
+    const created = await readJson<{ id: string }>(
+      await postJson(`${API}/agents`, {
+        modelType: "m",
+        settings: {
+          maxSteps: 7,
+          toolTimeoutSeconds: 30,
+          allowedOperatorTypes: [],
+        },
+      })
+    );
+
+    const persisted = await metadataStore.getAgent(created.id);
+    expect(persisted?.config.settings).toMatchObject({
+      maxSteps: 100,
+      toolTimeoutSeconds: 240,
+    });
+    expect(persisted?.config.settings.allowedOperatorTypes).toContain("CSVFileScan");
   });
 
   test("rejects invalid token", async () => {
@@ -352,31 +380,24 @@ describe("Agent control routes", () => {
   });
 });
 
-describe(`PATCH ${API}/agents/:id/settings`, () => {
-  test("updates settings and returns the new values", async () => {
+describe("agent configuration endpoints", () => {
+  test("does not expose system prompt or configuration endpoints", async () => {
     const created = await readJson<{ id: string }>(await postJson(`${API}/agents`, { modelType: "m" }));
 
-    const res = await patchJson(`${API}/agents/${created.id}/settings`, {
+    const systemInfo = await getJson(`${API}/agents/${created.id}/system-info`);
+    expect(systemInfo.status).toBe(404);
+
+    const settingsRead = await getJson(`${API}/agents/${created.id}/settings`);
+    expect(settingsRead.status).toBe(404);
+
+    const settingsWrite = await patchJson(`${API}/agents/${created.id}/settings`, {
       maxSteps: 7,
       toolTimeoutSeconds: 30,
     });
-    expect(res.status).toBe(200);
-    const body = await readJson<{ maxSteps: number; toolTimeoutSeconds: number }>(res);
-    expect(body.maxSteps).toBe(7);
-    expect(body.toolTimeoutSeconds).toBe(30);
+    expect(settingsWrite.status).toBe(404);
 
-    // A follow-up GET reflects the same values.
-    const reread = await readJson<{ maxSteps: number; toolTimeoutSeconds: number }>(
-      await getJson(`${API}/agents/${created.id}/settings`)
-    );
-    expect(reread.maxSteps).toBe(7);
-    expect(reread.toolTimeoutSeconds).toBe(30);
-
-    const persisted = await metadataStore.getAgent(created.id);
-    expect(persisted?.config.settings).toMatchObject({
-      maxSteps: 7,
-      toolTimeoutSeconds: 30,
-    });
+    const operatorTypes = await getJson(`${API}/agents/${created.id}/operator-types`);
+    expect(operatorTypes.status).toBe(404);
   });
 });
 

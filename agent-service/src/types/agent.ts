@@ -153,22 +153,9 @@ export interface AgentInfo {
   modelType: string;
   state: AgentState;
   createdAt: Date;
-  settings?: AgentSettingsApi;
 }
 
 export interface CreateAgentRequest {
   modelType: string;
   name?: string;
-  settings?: AgentSettingsApi;
-}
-
-export interface UpdateAgentSettingsRequest {
-  maxOperatorResultCharLimit?: number;
-  maxOperatorResultCellCharLimit?: number;
-  operatorResultSerializationMode?: "tsv";
-  toolTimeoutSeconds?: number;
-  executionTimeoutMinutes?: number;
-  disabledTools?: string[];
-  maxSteps?: number;
-  allowedOperatorTypes?: string[];
 }

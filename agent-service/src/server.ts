@@ -36,10 +36,8 @@ import type {
   AgentInfo,
   AgentTaskContext,
   CreateAgentRequest,
-  UpdateAgentSettingsRequest,
   ReActStep,
 } from "./types/agent";
-import { OperatorResultSerializationMode } from "./types/agent";
 
 const agentStore = new Map<string, TexeraAgent>();
 let agentMetadataStore: AgentMetadataStore = new PostgresAgentMetadataStore();
@@ -118,7 +116,6 @@ function getAgentInfo(agentId: string, agent: TexeraAgent): AgentInfo {
     modelType: agent.modelType,
     state: agent.getState(),
     createdAt: agent.createdAt,
-    settings: agent.getSettingsApi(),
   };
 }
 
@@ -142,10 +139,6 @@ async function getAgent(agentId: string, metadata?: AgentMetadata): Promise<Texe
     reactSteps: persisted.reactSteps,
   });
   return agent;
-}
-
-async function persistAgentConfig(agentId: string, agent: TexeraAgent): Promise<void> {
-  await agentMetadataStore.updateAgentConfig(agentId, agent.getPersistedConfig());
 }
 
 async function persistAgentReActSteps(agentId: string, agent: TexeraAgent): Promise<void> {
@@ -211,6 +204,10 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       set.status = 403;
       return { error: "Forbidden" };
     }
+    if (errorMessage === "NOT_FOUND") {
+      set.status = 404;
+      return { error: "NOT_FOUND" };
+    }
     if (errorMessage === "modelType is required") {
       set.status = 400;
       return { error: "modelType is required" };
@@ -248,7 +245,7 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
   .post(
     "/",
     async ({ body, headers, query }) => {
-      const { modelType, name, settings } = body as CreateAgentRequest;
+      const { modelType, name } = body as CreateAgentRequest;
 
       if (!modelType) {
         throw new Error("modelType is required");
@@ -268,29 +265,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       }
 
       const { agentId, agent } = await createAgentInstance({ modelType, name });
-
-      if (settings) {
-        log.info(
-          {
-            agentId,
-            maxOperatorResultCharLimit: settings.maxOperatorResultCharLimit,
-            maxOperatorResultCellCharLimit: settings.maxOperatorResultCellCharLimit,
-          },
-          "applying initial agent settings"
-        );
-        agent.updateSettings({
-          maxOperatorResultCharLimit: settings.maxOperatorResultCharLimit,
-          maxOperatorResultCellCharLimit: settings.maxOperatorResultCellCharLimit,
-          operatorResultSerializationMode: settings.operatorResultSerializationMode
-            ? (settings.operatorResultSerializationMode as OperatorResultSerializationMode)
-            : undefined,
-          toolTimeoutMs: settings.toolTimeoutSeconds ? settings.toolTimeoutSeconds * 1000 : undefined,
-          executionTimeoutMs: settings.executionTimeoutMinutes ? settings.executionTimeoutMinutes * 60000 : undefined,
-          disabledTools: settings.disabledTools ? new Set(settings.disabledTools) : undefined,
-          maxSteps: settings.maxSteps,
-          allowedOperatorTypes: settings.allowedOperatorTypes,
-        });
-      }
 
       try {
         await agentMetadataStore.createAgent({
@@ -314,18 +288,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       body: t.Object({
         modelType: t.String(),
         name: t.Optional(t.String()),
-        settings: t.Optional(
-          t.Object({
-            maxOperatorResultCharLimit: t.Optional(t.Number()),
-            maxOperatorResultCellCharLimit: t.Optional(t.Number()),
-            operatorResultSerializationMode: t.Optional(t.Literal("tsv")),
-            toolTimeoutSeconds: t.Optional(t.Number()),
-            executionTimeoutMinutes: t.Optional(t.Number()),
-            disabledTools: t.Optional(t.Array(t.String())),
-            maxSteps: t.Optional(t.Number()),
-            allowedOperatorTypes: t.Optional(t.Array(t.String())),
-          })
-        ),
       }),
     }
   )
@@ -372,11 +334,6 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
     }
   )
 
-  .get("/:id/system-info", async ({ params: { id } }) => {
-    const agent = await getAgent(id);
-    return agent.getSystemInfo();
-  })
-
   .post("/:id/stop", async ({ params: { id } }) => {
     const agent = await getAgent(id);
     agent.stop();
@@ -413,66 +370,7 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       status: "checked out",
       headId: stepId,
     };
-  })
-
-  .get("/:id/operator-types", async ({ params: { id } }) => {
-    const agent = await getAgent(id);
-    const metadataStore = agent.getMetadataStore();
-    const allTypes = metadataStore.getAllOperatorTypes();
-    return Object.entries(allTypes).map(([type, description]) => ({ type, description }));
-  })
-
-  .get("/:id/settings", async ({ params: { id } }) => {
-    const agent = await getAgent(id);
-    return agent.getSettingsApi();
-  })
-
-  .patch(
-    "/:id/settings",
-    async ({ params: { id }, body }) => {
-      const agent = await getAgent(id);
-      const settings = body as UpdateAgentSettingsRequest;
-
-      log.info(
-        {
-          agentId: id,
-          maxOperatorResultCharLimit: settings.maxOperatorResultCharLimit,
-          maxOperatorResultCellCharLimit: settings.maxOperatorResultCellCharLimit,
-        },
-        "updating agent settings"
-      );
-
-      agent.updateSettings({
-        maxOperatorResultCharLimit: settings.maxOperatorResultCharLimit,
-        maxOperatorResultCellCharLimit: settings.maxOperatorResultCellCharLimit,
-        operatorResultSerializationMode: settings.operatorResultSerializationMode
-          ? (settings.operatorResultSerializationMode as OperatorResultSerializationMode)
-          : undefined,
-        toolTimeoutMs: settings.toolTimeoutSeconds !== undefined ? settings.toolTimeoutSeconds * 1000 : undefined,
-        executionTimeoutMs:
-          settings.executionTimeoutMinutes !== undefined ? settings.executionTimeoutMinutes * 60000 : undefined,
-        disabledTools: settings.disabledTools ? new Set(settings.disabledTools) : undefined,
-        maxSteps: settings.maxSteps,
-        allowedOperatorTypes: settings.allowedOperatorTypes,
-      });
-
-      await persistAgentConfig(id, agent);
-
-      return agent.getSettingsApi();
-    },
-    {
-      body: t.Object({
-        maxOperatorResultCharLimit: t.Optional(t.Number()),
-        maxOperatorResultCellCharLimit: t.Optional(t.Number()),
-        operatorResultSerializationMode: t.Optional(t.Literal("tsv")),
-        toolTimeoutSeconds: t.Optional(t.Number()),
-        executionTimeoutMinutes: t.Optional(t.Number()),
-        maxSteps: t.Optional(t.Number()),
-        disabledTools: t.Optional(t.Array(t.String())),
-        allowedOperatorTypes: t.Optional(t.Array(t.String())),
-      }),
-    }
-  );
+  });
 
 interface WsMessage {
   type: "message" | "stop";
@@ -722,6 +620,10 @@ export function buildApp() {
     .onError(({ error, set }) => {
       // Catch-all for non-router routes such as /api/healthcheck and the websocket route.
       log.error({ err: error }, "request error");
+      if (error instanceof Error && error.message === "NOT_FOUND") {
+        set.status = 404;
+        return { error: "NOT_FOUND" };
+      }
       set.status = 500;
       return { error: error instanceof Error ? error.message : String(error) };
     });

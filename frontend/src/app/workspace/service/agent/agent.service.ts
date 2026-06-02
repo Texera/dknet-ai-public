@@ -45,28 +45,6 @@ import { Workflow, WorkflowContent } from "../../../common/type/workflow";
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
 
 /**
- * Agent settings for API (serializable format).
- */
-export interface AgentSettingsApi {
-  /** Maximum character limit for operator results (uses symmetric truncation) */
-  maxOperatorResultCharLimit?: number;
-  /** Maximum character limit per cell (truncates individual cell values beyond this limit) */
-  maxOperatorResultCellCharLimit?: number;
-  /** Serialization mode for operator results */
-  operatorResultSerializationMode?: "tsv";
-  /** Tool execution timeout in seconds */
-  toolTimeoutSeconds?: number;
-  /** Workflow execution timeout in minutes */
-  executionTimeoutMinutes?: number;
-  /** List of disabled tool names */
-  disabledTools?: string[];
-  /** Maximum number of steps per message */
-  maxSteps?: number;
-  /** List of allowed operator types (empty = all operators allowed) */
-  allowedOperatorTypes?: string[];
-}
-
-/**
  * Agent information for tracking created agents (API version).
  */
 export interface AgentInfo {
@@ -82,8 +60,6 @@ export interface AgentInfo {
     workflowId?: number;
     workflowName?: string;
   };
-  /** Current agent settings */
-  settings?: AgentSettingsApi;
 }
 
 /**
@@ -128,7 +104,6 @@ interface ApiAgentInfo {
     workflowId?: number;
     workflowName?: string;
   };
-  settings?: AgentSettingsApi;
 }
 
 interface ApiAgentListResponse {
@@ -368,7 +343,6 @@ export class AgentService {
             workflowName: apiAgent.delegate.workflowName,
           }
         : undefined,
-      settings: apiAgent.settings,
     };
   }
 
@@ -815,7 +789,6 @@ export class AgentService {
                   workflowName: response.delegate.workflowName,
                 }
               : undefined,
-            settings: response.settings,
           };
 
           this.agents.set(response.id, agentInfo);
@@ -863,7 +836,6 @@ export class AgentService {
                   workflowName: response.delegate.workflowName,
                 }
               : undefined,
-            settings: response.settings,
           };
           this.agents.set(response.id, agentInfo);
           return agentInfo;
@@ -1112,29 +1084,6 @@ export class AgentService {
   }
 
   /**
-   * Get system information for an agent (system prompt and tools).
-   * Fetches from agent-service API.
-   */
-  public getSystemInfo(agentId: string): Observable<{
-    systemPrompt: string;
-    tools: Array<{ name: string; description: string; inputSchema: any; enabled: boolean }>;
-  }> {
-    return this.http
-      .get<{
-        systemPrompt: string;
-        tools: Array<{ name: string; description: string; inputSchema: any; enabled: boolean }>;
-      }>(`${this.AGENT_API_BASE}/agents/${agentId}/system-info`, this.agentHeaders(agentId))
-      .pipe(
-        catchError(() =>
-          of({
-            systemPrompt: "Unable to retrieve system prompt",
-            tools: [],
-          })
-        )
-      );
-  }
-
-  /**
    * Set hovered message (local UI state).
    */
   public setHoveredMessage(agentId: string, step: ReActStep | null): void {
@@ -1226,67 +1175,6 @@ export class AgentService {
   public ensureWorkflowPolling(agentId: string, workflowId: number): void {
     const tracking = this.getOrCreateStateTracking(agentId);
     this.updateTrackingWorkflowContext(tracking, workflowId);
-  }
-
-  /**
-   * Get agent settings.
-   */
-  public getAgentSettings(agentId: string): Observable<AgentSettingsApi> {
-    return this.http
-      .get<AgentSettingsApi>(`${this.AGENT_API_BASE}/agents/${agentId}/settings`, this.agentHeaders(agentId))
-      .pipe(
-        catchError(() =>
-          of({
-            maxOperatorResultCharLimit: 20000,
-            maxOperatorResultCellCharLimit: 4000,
-            toolTimeoutSeconds: 120,
-            executionTimeoutMinutes: 10,
-            disabledTools: [],
-            maxSteps: 10,
-            allowedOperatorTypes: [],
-          })
-        )
-      );
-  }
-
-  /**
-   * Update agent settings.
-   * Only provided values will be updated.
-   */
-  public updateAgentSettings(agentId: string, settings: Partial<AgentSettingsApi>): Observable<AgentSettingsApi> {
-    return this.http
-      .patch<AgentSettingsApi>(
-        `${this.AGENT_API_BASE}/agents/${agentId}/settings`,
-        settings,
-        this.agentHeaders(agentId)
-      )
-      .pipe(
-        map(response => {
-          // Update local cache if we have this agent
-          const agent = this.agents.get(agentId);
-          if (agent) {
-            agent.settings = response;
-          }
-          return response;
-        }),
-        catchError((error: unknown) => {
-          const err = error as { error?: { error?: string }; message?: string };
-          const errorMsg = err.error?.error || err.message || "Failed to update agent settings";
-          this.notificationService.error(errorMsg);
-          return throwError(() => new Error(errorMsg));
-        })
-      );
-  }
-
-  /**
-   * Get all available operator types for an agent.
-   */
-  public getAvailableOperatorTypes(agentId: string): Observable<Array<{ type: string; description: string }>> {
-    return this.http
-      .get<
-        Array<{ type: string; description: string }>
-      >(`${this.AGENT_API_BASE}/agents/${agentId}/operator-types`, this.agentHeaders(agentId))
-      .pipe(catchError(() => of([])));
   }
 
   // ============================================================================

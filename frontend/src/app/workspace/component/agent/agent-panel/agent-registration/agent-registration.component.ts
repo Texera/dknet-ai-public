@@ -53,7 +53,7 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
 
   public modelTypes: ModelType[] = [];
   public selectedModelType: string | null = null;
-  public customAgentName: string = "Texera Agent";
+  public customAgentName: string = "DKNet Agent";
   public isLoadingModels: boolean = false;
   public hasLoadingError: boolean = false;
   public isCreating: boolean = false;
@@ -123,7 +123,7 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
 
   private resetForm(): void {
     this.selectedModelType = null;
-    this.customAgentName = "";
+    this.customAgentName = "DKNet Agent";
     this.isCreating = false;
   }
 
