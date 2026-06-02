@@ -7,11 +7,13 @@ metadata:
     app: cloudmapper
 spec:
   replicas: {{ .Values.cloudmapper.replicas | default 1 }}
-  # NOTE: cloudmapper mounts a ReadWriteOnce EBS PVC. On upgrades the default
-  # RollingUpdate can briefly deadlock on a Multi-Attach error until the old pod
-  # releases the volume. Switching to `strategy.type: Recreate` is the proper fix
-  # but requires a one-time `kubectl delete deploy cloudmapper` (the controller-
-  # defaulted rollingUpdate field blocks an in-place server-side-apply switch).
+  # cloudmapper mounts a ReadWriteOnce EBS PVC; the default RollingUpdate can
+  # deadlock on a Multi-Attach error on upgrade (the new pod can't attach the
+  # volume the old pod still holds). Recreate (kill-then-create) avoids it.
+  # NOTE: switching an existing deployment off the controller-defaulted
+  # RollingUpdate may need a one-time `kubectl delete deploy cloudmapper`.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: cloudmapper
