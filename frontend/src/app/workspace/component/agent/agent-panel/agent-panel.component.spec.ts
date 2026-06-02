@@ -60,6 +60,18 @@ describe("AgentPanelComponent", () => {
     expect(emittedWidths.at(-1)).toBe(0);
   });
 
+  it("only updates width for docked resize events", () => {
+    component.openPanel();
+    const previousHeight = component.height;
+
+    component.onResize({ width: 480, height: 620, direction: "bottomRight" });
+
+    expect(component.width).toBe(480);
+    expect(component.height).toBe(previousHeight);
+    expect(component.dragPosition).toEqual({ x: 0, y: 0 });
+    expect((component as any).dockResizeDirections).toEqual(["left"]);
+  });
+
   it("opens in floating mode without reserving dashboard width", () => {
     const emittedWidths: number[] = [];
     component.panelMode = "float";
@@ -89,6 +101,19 @@ describe("AgentPanelComponent", () => {
       "bottomLeft",
       "bottomRight",
     ]);
+  });
+
+  it("moves floating panel offset when resizing from right and bottom edges", () => {
+    component.panelMode = "float";
+    component.openPanel();
+    component.dragPosition = { x: 5, y: 7 };
+    component.height = 500;
+
+    component.onResize({ width: 520, height: 620, direction: "bottomRight" });
+
+    expect(component.width).toBe(520);
+    expect(component.height).toBe(620);
+    expect(component.dragPosition).toEqual({ x: 125, y: 127 });
   });
 
   it("keeps dock width independent from floating layout when switching modes", () => {

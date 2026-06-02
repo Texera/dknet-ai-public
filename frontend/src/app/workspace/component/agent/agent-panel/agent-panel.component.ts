@@ -371,18 +371,29 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
   /**
    * Handle panel resize
    */
-  onResize({ width, height }: NzResizeEvent): void {
+  onResize(event: NzResizeEvent): void {
+    const { width, height, direction } = event;
     if (width === undefined && height === undefined) {
       return;
     }
     cancelAnimationFrame(this.resizeAnimationFrameId);
     this.resizeAnimationFrameId = requestAnimationFrame(() => {
+      const previousWidth = this.width;
+      const previousHeight = this.height;
+
       if (width !== undefined) {
         this.setPanelWidth(width);
+        if (this.isFloatingMode && this.isResizeFromEdge("right", direction)) {
+          this.dragPosition = { ...this.dragPosition, x: this.dragPosition.x + this.width - previousWidth };
+          this.savePanelSettings();
+        }
       }
       if (this.isFloatingMode && height !== undefined) {
         this.height = this.clampPanelHeight(height);
         this.lastOpenFloatHeight = this.height;
+        if (this.isResizeFromEdge("bottom", direction)) {
+          this.dragPosition = { ...this.dragPosition, y: this.dragPosition.y + this.height - previousHeight };
+        }
         this.savePanelSettings();
       }
     });
@@ -478,6 +489,10 @@ export class AgentPanelComponent implements OnInit, OnDestroy, OnChanges {
 
   private get currentLastOpenWidth(): number {
     return this.isFloatingMode ? this.lastOpenFloatWidth : this.lastOpenDockWidth;
+  }
+
+  private isResizeFromEdge(edge: "right" | "bottom", direction?: NzResizeDirection): boolean {
+    return direction?.toLowerCase().includes(edge) ?? false;
   }
 
   private clampPanelWidth(width: number, maxWidth: number): number {
