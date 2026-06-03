@@ -160,6 +160,12 @@ interface AgentStateTracking {
    * DB polling, so subscribing to it on tab-switch never reloads/clobbers the canvas.
    */
   workflowEditSubject: Subject<Workflow>;
+  /**
+   * True while the WebSocket is connecting and we are waiting for the first `init`
+   * message (the initial ReAct-step history). Lets the UI show a loading indicator
+   * instead of a blank chat on first connect.
+   */
+  initializingSubject: BehaviorSubject<boolean>;
   workflowId?: number;
   stopPolling$: Subject<void>;
   /** When true, workflow updates come from WS — polling is suppressed */
@@ -188,6 +194,9 @@ interface AgentRequestContext {
 export class AgentService {
   /** Base URL for agent service API */
   private readonly AGENT_API_BASE = "/api";
+
+  /** Safety net: stop the initial-loading indicator if `init` never arrives. */
+  private static readonly INIT_TIMEOUT_MS = 15000;
 
   /** Local cache of agent info */
   private agents = new Map<string, AgentInfo>();
@@ -454,6 +463,7 @@ export class AgentService {
         headIdSubject: new BehaviorSubject<string | null>(null),
         workflowSubject: new BehaviorSubject<Workflow | null>(null),
         workflowEditSubject: new Subject<Workflow>(),
+        initializingSubject: new BehaviorSubject<boolean>(false),
         workflowId,
         stopPolling$: new Subject<void>(),
         wsWorkflowActive: false,
@@ -504,8 +514,33 @@ export class AgentService {
     const tokenParam = token ? `?access-token=${encodeURIComponent(token)}` : "";
     const wsUrl = `${wsProtocol}//${window.location.host}${this.AGENT_API_BASE}/agents/${agentId}/react${tokenParam}`;
 
-    const ws = new WebSocket(wsUrl);
+    // We are connecting and waiting for the initial step history; show a loader.
+    tracking.initializingSubject.next(true);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (error) {
+      // The constructor can throw synchronously (e.g. malformed URL); don't leave
+      // the loader spinning forever.
+      console.error(`Agent ${agentId} failed to open WebSocket:`, error);
+      tracking.initializingSubject.next(false);
+      tracking.stateSubject.next(AgentState.UNAVAILABLE);
+      return;
+    }
     tracking.websocket = ws;
+
+    // Safety net: if the socket opens but the initial step history never arrives,
+    // stop the loader after a timeout so it can't spin forever. The guards make this
+    // a no-op once `init` arrives or this socket is replaced/closed; a late `init`
+    // can still populate the chat afterwards.
+    setTimeout(() => {
+      if (tracking.websocket === ws && tracking.initializingSubject.getValue()) {
+        console.warn(`Agent ${agentId} timed out waiting for initial step history`);
+        tracking.initializingSubject.next(false);
+        tracking.stateSubject.next(AgentState.UNAVAILABLE);
+      }
+    }, AgentService.INIT_TIMEOUT_MS);
 
     ws.onmessage = event => {
       try {
@@ -520,6 +555,12 @@ export class AgentService {
 
     ws.onerror = error => {
       console.error(`Agent ${agentId} WebSocket error:`, error);
+      // Stop the loader so a failed connection doesn't spin forever — but only if
+      // this is still the current socket (a stale socket from a rapid
+      // deactivate/reactivate must not clear the new connection's loader).
+      if (tracking.websocket === ws) {
+        tracking.initializingSubject.next(false);
+      }
     };
 
     ws.onclose = event => {
@@ -527,6 +568,7 @@ export class AgentService {
       // deactivate/reactivate may have already swapped it.
       if (tracking.websocket === ws) {
         tracking.websocket = undefined;
+        tracking.initializingSubject.next(false);
         if (event.code !== 1000) {
           tracking.stateSubject.next(AgentState.UNAVAILABLE);
         }
@@ -543,6 +585,8 @@ export class AgentService {
   private handleWebSocketMessage(agentId: string, tracking: AgentStateTracking, message: any): void {
     switch (message.type) {
       case "init":
+        // Initial step history has arrived — hide the loader.
+        tracking.initializingSubject.next(false);
         // Initial state and steps
         if (message.state) {
           tracking.stateSubject.next(this.mapStateToAgentState(message.state));
@@ -737,6 +781,7 @@ export class AgentService {
     }
 
     tracking.isActive = false;
+    tracking.initializingSubject.next(false);
 
     // Close WebSocket connection
     if (tracking.websocket) {
@@ -1194,6 +1239,18 @@ export class AgentService {
       return tracking.workflowEditSubject.asObservable();
     }
     return EMPTY;
+  }
+
+  /**
+   * True while connecting to the agent and awaiting the initial ReAct-step history
+   * (first `init` message). Used to show a loading indicator instead of a blank chat.
+   */
+  public getInitializingObservable(agentId: string): Observable<boolean> {
+    const tracking = this.agentStateTracking.get(agentId);
+    if (tracking) {
+      return tracking.initializingSubject.asObservable();
+    }
+    return of(false);
   }
 
   /**

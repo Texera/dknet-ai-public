@@ -63,6 +63,7 @@ describe("AgentChatComponent", () => {
         getAgentStateObservable: vi.fn(() => agentStateSubject.asObservable()),
         getReActStepsObservable: vi.fn(() => reactStepsSubject.asObservable()),
         getHeadIdObservable: vi.fn(() => headIdSubject.asObservable()),
+        getInitializingObservable: vi.fn(() => of(false)),
         getWorkflowEditObservable: vi.fn(() => EMPTY),
         scrollToStep$: new Subject<{ agentId: string; messageId: string; stepId: number }>(),
         setHoveredMessage: vi.fn(),

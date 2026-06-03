@@ -99,6 +99,16 @@
       <div
         #messageContainer
         class="messages-container">
+        <!-- Initial loading: connecting and fetching the conversation history -->
+        <div
+          *ngIf="isLoadingSteps && visibleSteps.length === 0"
+          class="initial-loading">
+          <nz-spin
+            nzSimple
+            nzSize="large"></nz-spin>
+          <span class="initial-loading-text">Loading conversation…</span>
+        </div>
+
         <div
           *ngFor="let response of visibleSteps; let i = index"
           class="message"

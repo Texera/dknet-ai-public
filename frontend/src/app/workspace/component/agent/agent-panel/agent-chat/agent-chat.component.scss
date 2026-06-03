@@ -122,6 +122,22 @@
   gap: 8px;
 }
 
+.initial-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.initial-loading-text {
+  user-select: none;
+}
+
 .message {
   display: flex;
   flex-direction: column;

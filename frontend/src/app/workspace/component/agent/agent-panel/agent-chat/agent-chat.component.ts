@@ -98,6 +98,8 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   public hoveredMessageIndex: number | null = null;
   public agentState: AgentState = AgentState.UNAVAILABLE;
   public workspaceContextBadge: WorkspaceContextBadge | null = null;
+  // True while connecting and waiting for the agent's initial step history.
+  public isLoadingSteps = false;
 
   // Current HEAD step ID in the version tree
   public currentHeadId: string | null = null;
@@ -122,6 +124,15 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     }
 
     this.registerWorkspaceContextBadge();
+
+    // Show a loader while connecting and waiting for the initial step history.
+    this.agentService
+      .getInitializingObservable(this.agentInfo.id)
+      .pipe(distinctUntilChanged(), untilDestroyed(this))
+      .subscribe(initializing => {
+        this.isLoadingSteps = initializing;
+        this.cdr.detectChanges();
+      });
 
     // Get the current state from manager service
     this.agentService
