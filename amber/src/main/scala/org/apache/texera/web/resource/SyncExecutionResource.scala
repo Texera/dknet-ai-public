@@ -804,6 +804,12 @@ class SyncExecutionResource extends LazyLogging {
       eid: ExecutionIdentity,
       opId: OperatorIdentity
   ): Option[URI] = {
+    // The Computing Unit holds no Postgres connection (issue #5011): it never initializes SqlServer.
+    // Console messages are then served from the in-memory store (the caller's orElse fallback), so
+    // skip the DB read on the CU rather than relying on a swallowed SqlServer.getInstance() failure.
+    if (!SqlServer.isInitialized) {
+      return None
+    }
     val context = SqlServer.getInstance().createDSLContext()
     Option(
       context
