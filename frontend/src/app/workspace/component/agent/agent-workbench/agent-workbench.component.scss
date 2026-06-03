@@ -25,85 +25,176 @@
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: white;
+  background: #f7f9fc;
 }
 
-.agent-tabs {
+.agent-workbench {
   flex: 1 1 auto;
   min-height: 0;
-  height: auto;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-
-  ::ng-deep {
-    .ant-tabs {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .ant-tabs-nav {
-      margin-bottom: 0;
-    }
-
-    .ant-tabs-content-holder {
-      flex: 1;
-      overflow: hidden;
-    }
-
-    .ant-tabs-content {
-      height: 100%;
-    }
-
-    .ant-tabs-tabpane {
-      height: 100%;
-      overflow: hidden;
-      padding: 0;
-    }
-  }
 }
 
-.agent-tab-title {
+.agent-tabs {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-
-  .agent-tab-name {
-    flex: 1;
-  }
+  gap: 6px;
+  padding: 8px 10px 0;
+  background: #f7f9fc;
+  border-bottom: 1px solid #e6ebf2;
 }
 
-.agent-tab-close {
-  padding: 0 !important;
-  width: 20px !important;
-  height: 20px !important;
-  min-width: 20px !important;
+.agent-tab-list {
   display: flex;
   align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-  margin-left: 4px;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.agent-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 210px;
+  min-width: 96px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #5f6b7a;
+  font-size: 12px;
+  line-height: 32px;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+
+  i {
+    flex: 0 0 auto;
+    font-size: 14px;
+  }
+
+  .tab-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   &:hover {
-    opacity: 1;
-    color: #ff4d4f !important;
-    background: rgba(255, 77, 79, 0.1) !important;
+    background: #eef3f9;
+    color: #1f2d3d;
   }
+
+  &.active {
+    background: #ffffff;
+    border-color: #d9e2ec;
+    color: #0f1f33;
+    font-weight: 500;
+  }
+
+  &.pending:not(.active) {
+    color: #69788a;
+  }
+
+  &:hover .tab-actions,
+  &:focus-within .tab-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.tab-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 6px;
+  border-radius: 5px;
+  background: #eef3f9;
+  box-shadow: -10px 0 10px #eef3f9;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.agent-tab.active .tab-actions {
+  background: #ffffff;
+  box-shadow: -10px 0 10px #ffffff;
+}
+
+.tab-action-button {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  color: #52677e;
 
   i {
     font-size: 12px;
   }
+
+  &.delete:hover {
+    color: #cf1322;
+  }
 }
 
-.tab-bar-extra {
-  padding-right: 8px;
-}
-
-.agent-count {
+.tab-name-input {
+  width: 150px;
+  height: 24px;
+  padding: 2px 6px;
   font-size: 12px;
-  color: #8c8c8c;
-  padding: 4px 8px;
-  background: #f0f0f0;
-  border-radius: 4px;
+  line-height: 20px;
+}
+
+.new-agent-tab-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  color: #36516f;
+}
+
+.agent-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+
+  texera-agent-chat {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
+  texera-agent-chat[hidden] {
+    display: none;
+  }
+}
+
+.workbench-loading {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #595959;
+  font-size: 13px;
 }

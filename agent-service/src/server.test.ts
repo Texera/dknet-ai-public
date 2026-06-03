@@ -28,6 +28,7 @@ import {
   _setAgentMetadataStoreForTests,
 } from "./server";
 import { env } from "./config/env";
+import { DEFAULT_AGENT_NAME } from "./types/agent";
 
 const API = env.API_PREFIX;
 const SECRET = "test-secret-key-for-agent-service-access-control";
@@ -145,6 +146,15 @@ describe(`POST ${API}/agents`, () => {
     expect(a.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
+  test("defaults unnamed agents to DKNetAgent", async () => {
+    const res = await postJson(`${API}/agents`, { modelType: "m" });
+    expect(res.status).toBe(200);
+
+    const agent = await readJson<{ id: string; name: string }>(res);
+    expect(agent.name).toBe(DEFAULT_AGENT_NAME);
+    expect(await metadataStore.getAgent(agent.id)).toMatchObject({ name: DEFAULT_AGENT_NAME });
+  });
+
   test("persists ownership metadata for the creating user", async () => {
     const agent = await readJson<{ id: string }>(
       await postJson(`${API}/agents`, { modelType: "m", name: "owned" }, tokenFor(7))
@@ -228,7 +238,24 @@ describe(`POST ${API}/agents`, () => {
       maxSteps: 100,
       toolTimeoutSeconds: 240,
     });
-    expect(persisted?.config.settings.allowedOperatorTypes).toContain("CSVFileScan");
+    expect(persisted?.config.settings).not.toHaveProperty("allowedOperatorTypes");
+  });
+
+  test("exposes operator discovery tools without fixed operator configuration", async () => {
+    const created = await readJson<{ id: string }>(await postJson(`${API}/agents`, { modelType: "m" }));
+    const agent = _getAgentForTests(created.id);
+    expect(agent).toBeDefined();
+
+    const systemInfo = agent!.getSystemInfo();
+    const toolNames = systemInfo.tools.map(tool => tool.name);
+    expect(toolNames).toContain("list_operator_types");
+    expect(toolNames).toContain("get_operator_schema");
+    expect(agent!.getSettingsApi()).not.toHaveProperty("allowedOperatorTypes");
+
+    agent!.updateSettings({ maxOperatorResultCharLimit: 8 });
+    const operatorTypes = await (agent as any).tools.list_operator_types.execute({});
+    expect(operatorTypes).not.toContain("...[truncated]");
+    expect(JSON.parse(operatorTypes).operatorTypes.length).toBeGreaterThan(0);
   });
 
   test("rejects invalid token", async () => {
@@ -313,6 +340,65 @@ describe(`GET ${API}/agents/:id`, () => {
     expect(res.status).toBe(404);
     const body = await readJson<{ error: string }>(res);
     expect(body.error).toBe("Agent not found");
+  });
+});
+
+describe(`PATCH ${API}/agents/:id`, () => {
+  test("updates agent name and model type in runtime state and persisted metadata", async () => {
+    const created = await readJson<{ id: string }>(
+      await postJson(`${API}/agents`, { modelType: "old-model", name: "Old name" })
+    );
+
+    const res = await patchJson(`${API}/agents/${created.id}`, {
+      name: "Renamed agent",
+      modelType: "new-model",
+    });
+
+    expect(res.status).toBe(200);
+    const body = await readJson<{ id: string; name: string; modelType: string }>(res);
+    expect(body).toMatchObject({
+      id: created.id,
+      name: "Renamed agent",
+      modelType: "new-model",
+    });
+
+    expect(await metadataStore.getAgent(created.id)).toMatchObject({
+      name: "Renamed agent",
+      modelType: "new-model",
+    });
+    expect(_getAgentForTests(created.id)).toMatchObject({
+      agentName: "Renamed agent",
+      modelType: "new-model",
+    });
+
+    _resetAgentStoreForTests();
+
+    const getRes = await getJson(`${API}/agents/${created.id}`);
+    expect(getRes.status).toBe(200);
+    expect(await readJson<{ name: string; modelType: string }>(getRes)).toMatchObject({
+      name: "Renamed agent",
+      modelType: "new-model",
+    });
+  });
+
+  test("rejects empty update values", async () => {
+    const created = await readJson<{ id: string }>(await postJson(`${API}/agents`, { modelType: "m" }));
+
+    const res = await patchJson(`${API}/agents/${created.id}`, { name: "  " });
+
+    expect(res.status).toBe(400);
+    expect(await readJson<{ error: string }>(res)).toEqual({ error: "name must not be empty" });
+  });
+
+  test("keeps update access scoped to the owner", async () => {
+    const created = await readJson<{ id: string }>(
+      await postJson(`${API}/agents`, { modelType: "m", name: "mine" }, tokenFor(1))
+    );
+
+    const res = await patchJson(`${API}/agents/${created.id}`, { name: "not mine" }, tokenFor(2));
+
+    expect(res.status).toBe(403);
+    expect(await metadataStore.getAgent(created.id)).toMatchObject({ name: "mine" });
   });
 });
 

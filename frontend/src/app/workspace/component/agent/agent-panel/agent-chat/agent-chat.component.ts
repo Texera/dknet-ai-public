@@ -21,7 +21,9 @@ import {
   Component,
   ViewChild,
   ElementRef,
+  EventEmitter,
   Input,
+  Output,
   OnInit,
   AfterViewChecked,
   ChangeDetectorRef,
@@ -32,22 +34,21 @@ import {
 import { NavigationEnd, Router } from "@angular/router";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { Subject } from "rxjs";
-import { distinctUntilChanged, filter, takeUntil } from "rxjs/operators";
+import { distinctUntilChanged, filter, finalize, map, switchMap, takeUntil } from "rxjs/operators";
 import { AgentState, ReActStep } from "../../../../service/agent/agent-types";
-import { AgentInfo, AgentService } from "../../../../service/agent/agent.service";
+import { AgentInfo, AgentService, ModelType } from "../../../../service/agent/agent.service";
 import { WorkflowActionService } from "../../../../service/workflow-graph/model/workflow-action.service";
 import { NotificationService } from "../../../../../common/service/notification/notification.service";
-import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
 import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
-import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
 import { NzButtonComponent } from "ng-zorro-antd/button";
+import { NzCardComponent } from "ng-zorro-antd/card";
 import { NgIf, NgFor } from "@angular/common";
 import { MarkdownComponent } from "ngx-markdown";
 import { NzSpinComponent } from "ng-zorro-antd/spin";
 import { NzInputDirective, NzAutosizeDirective } from "ng-zorro-antd/input";
+import { NzSelectComponent, NzOptionComponent } from "ng-zorro-antd/select";
 import { FormsModule } from "@angular/forms";
-import { NzWaveDirective } from "ng-zorro-antd/core/wave";
 import { ReActStepDetailModalComponent } from "../react-step-detail-modal/react-step-detail-modal.component";
 import { ComputingUnitStatusService } from "../../../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
 import { DashboardWorkflowComputingUnit } from "../../../../../common/type/workflow-computing-unit";
@@ -56,7 +57,12 @@ interface WorkspaceContextBadge {
   workflowId: number;
   computingUnitId?: number;
   computingUnitName?: string;
-  computingUnitStatus?: string;
+}
+
+interface SuggestedQuestion {
+  title: string;
+  prompt: string;
+  icon: string;
 }
 
 @UntilDestroy()
@@ -65,25 +71,27 @@ interface WorkspaceContextBadge {
   templateUrl: "agent-chat.component.html",
   styleUrls: ["agent-chat.component.scss"],
   imports: [
-    ɵNzTransitionPatchDirective,
     NzIconDirective,
     NzTooltipDirective,
-    NzSpaceCompactItemDirective,
     NzButtonComponent,
+    NzCardComponent,
     NgIf,
     NgFor,
     MarkdownComponent,
     NzSpinComponent,
     NzInputDirective,
+    NzSelectComponent,
+    NzOptionComponent,
     FormsModule,
     NzAutosizeDirective,
-    NzWaveDirective,
     ReActStepDetailModalComponent,
   ],
 })
 export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, OnChanges {
-  @Input() agentInfo!: AgentInfo;
+  @Input() agentInfo: AgentInfo | null = null;
   @Input() isActive: boolean = false;
+  @Output() agentCreated = new EventEmitter<AgentInfo>();
+  @Output() agentUpdated = new EventEmitter<AgentInfo>();
   @ViewChild("messageContainer", { static: false }) messageContainer?: ElementRef;
   @ViewChild("messageInput", { static: false }) messageInput?: ElementRef;
 
@@ -100,12 +108,37 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   public workspaceContextBadge: WorkspaceContextBadge | null = null;
   // True while connecting and waiting for the agent's initial step history.
   public isLoadingSteps = false;
+  public modelTypes: ModelType[] = [];
+  public selectedModelType: string | null = null;
+  public isLoadingModels = false;
+  public isCreatingAgent = false;
+  public isUpdatingModel = false;
+  public readonly suggestedQuestions: SuggestedQuestion[] = [
+    {
+      title: "Introduce Texera",
+      prompt: "Please introduce this platform to me.",
+      icon: "compass",
+    },
+    {
+      title: "Bio-MCP PubMed Search",
+      prompt:
+        "Search on PubMed for recent single-cell RNA-seq studies about Alzheimer's disease biomarkers and summarize useful datasets.",
+      icon: "experiment",
+    },
+    {
+      title: "Data Analysis Guide",
+      prompt: "How do I do data analysis on this platform?",
+      icon: "bar-chart",
+    },
+  ];
 
   // Current HEAD step ID in the version tree
   public currentHeadId: string | null = null;
 
   // Subject to control workflow subscription lifecycle
   private stopWorkflowSubscription$ = new Subject<void>();
+  private stopAgentSubscriptions$ = new Subject<void>();
+  private attachedAgentId: string | null = null;
   private currentUrl = "";
   private selectedComputingUnit: DashboardWorkflowComputingUnit | null = null;
 
@@ -119,52 +152,121 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   ) {}
 
   ngOnInit(): void {
-    if (!this.agentInfo) {
+    this.registerWorkspaceContextBadge();
+    this.loadModelTypes();
+    this.attachAgent(this.agentInfo);
+
+    // Auto-persist is intentionally left enabled while the agent runs: the agent
+    // streams its edits onto the canvas, and the frontend's normal auto-persist then
+    // saves them to the backend (the single source of truth). The agent also persists
+    // at task completion as a backstop.
+
+    // Note: Workflow subscription is started/stopped via ngOnChanges based on isActive
+    // This prevents automatic workflow switching when multiple agents are running
+
+    // Subscribe to scroll-to-step requests
+    this.agentService.scrollToStep$.pipe(untilDestroyed(this)).subscribe(({ agentId, messageId, stepId }) => {
+      if (this.agentInfo && agentId === this.agentInfo.id) {
+        this.scrollToStep(messageId, stepId);
+      }
+    });
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes["agentInfo"] && !changes["agentInfo"].firstChange) {
+      this.attachAgent(this.agentInfo);
+    }
+
+    if (changes["isActive"]) {
+      if (this.isActive && this.agentInfo) {
+        this.startWorkflowSubscription();
+      } else {
+        this.stopWorkflowSubscription();
+      }
+    }
+  }
+
+  private loadModelTypes(): void {
+    this.isLoadingModels = true;
+    this.agentService
+      .fetchModelTypes()
+      .pipe(
+        finalize(() => {
+          this.isLoadingModels = false;
+          this.cdr.detectChanges();
+        }),
+        untilDestroyed(this)
+      )
+      .subscribe(models => {
+        this.modelTypes = models;
+        if (this.agentInfo) {
+          this.selectedModelType = this.agentInfo.modelType;
+        } else if (!this.selectedModelType && models.length > 0) {
+          this.selectedModelType = models[0].id;
+        }
+      });
+  }
+
+  private attachAgent(agentInfo: AgentInfo | null): void {
+    if (!agentInfo) {
+      this.attachedAgentId = null;
+      this.stopAgentSubscriptions$.next();
+      this.stopWorkflowSubscription();
+      this.agentResponses = [];
+      this.visibleSteps = [];
+      this.currentHeadId = null;
+      this.agentState = AgentState.UNAVAILABLE;
+      this.isLoadingSteps = false;
       return;
     }
 
-    this.registerWorkspaceContextBadge();
+    if (this.attachedAgentId === agentInfo.id) {
+      this.selectedModelType = agentInfo.modelType;
+      return;
+    }
 
-    // Show a loader while connecting and waiting for the initial step history.
+    this.stopAgentSubscriptions$.next();
+    this.attachedAgentId = agentInfo.id;
+    this.selectedModelType = agentInfo.modelType;
+    this.agentState = agentInfo.state ?? AgentState.UNAVAILABLE;
+    this.agentResponses = [];
+    this.visibleSteps = [];
+    this.currentHeadId = null;
+    this.hoveredMessageIndex = null;
+
     this.agentService
-      .getInitializingObservable(this.agentInfo.id)
-      .pipe(distinctUntilChanged(), untilDestroyed(this))
+      .getInitializingObservable(agentInfo.id)
+      .pipe(distinctUntilChanged(), takeUntil(this.stopAgentSubscriptions$), untilDestroyed(this))
       .subscribe(initializing => {
         this.isLoadingSteps = initializing;
         this.cdr.detectChanges();
       });
 
-    // Get the current state from manager service
     this.agentService
-      .getAgentState(this.agentInfo.id)
-      .pipe(untilDestroyed(this))
+      .getAgentState(agentInfo.id)
+      .pipe(takeUntil(this.stopAgentSubscriptions$), untilDestroyed(this))
       .subscribe(state => {
         this.agentState = state;
-        // Immediately trigger change detection to show the current state
         this.cdr.detectChanges();
       });
 
-    // Then subscribe to agent state changes (BehaviorSubject will immediately emit current value)
     this.agentService
-      .getAgentStateObservable(this.agentInfo.id)
-      .pipe(untilDestroyed(this))
+      .getAgentStateObservable(agentInfo.id)
+      .pipe(takeUntil(this.stopAgentSubscriptions$), untilDestroyed(this))
       .subscribe(state => {
         this.agentState = state;
-        // Force immediate change detection
         this.cdr.detectChanges();
       });
 
-    // Subscribe to ReActSteps
     this.agentService
-      .getReActStepsObservable(this.agentInfo.id)
-      .pipe(untilDestroyed(this))
+      .getReActStepsObservable(agentInfo.id)
+      .pipe(takeUntil(this.stopAgentSubscriptions$), untilDestroyed(this))
       .subscribe(steps => {
         const previousLength = this.visibleSteps.length;
         this.agentResponses = steps;
         this.updateVisibleSteps();
         this.shouldScrollToBottom = true;
 
-        // Automatically highlight the latest visible step
         if (this.visibleSteps.length > 0) {
           const latestIndex = this.visibleSteps.length - 1;
           const previousLatestIndex = previousLength - 1;
@@ -178,48 +280,20 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
           }
         }
 
-        // Trigger change detection
         this.cdr.detectChanges();
       });
 
-    // Subscribe to HEAD changes
     this.agentService
-      .getHeadIdObservable(this.agentInfo.id)
-      .pipe(untilDestroyed(this))
+      .getHeadIdObservable(agentInfo.id)
+      .pipe(takeUntil(this.stopAgentSubscriptions$), untilDestroyed(this))
       .subscribe(headId => {
         this.currentHeadId = headId;
         this.updateVisibleSteps();
         this.cdr.detectChanges();
       });
 
-    // Auto-persist is intentionally left enabled while the agent runs: the agent
-    // streams its edits onto the canvas, and the frontend's normal auto-persist then
-    // saves them to the backend (the single source of truth). The agent also persists
-    // at task completion as a backstop.
-
-    // Note: Workflow subscription is started/stopped via ngOnChanges based on isActive
-    // This prevents automatic workflow switching when multiple agents are running
-
-    // Start workflow subscription if already active
     if (this.isActive) {
       this.startWorkflowSubscription();
-    }
-
-    // Subscribe to scroll-to-step requests
-    this.agentService.scrollToStep$.pipe(untilDestroyed(this)).subscribe(({ agentId, messageId, stepId }) => {
-      if (agentId === this.agentInfo.id) {
-        this.scrollToStep(messageId, stepId);
-      }
-    });
-  }
-
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes["isActive"]) {
-      if (this.isActive) {
-        this.startWorkflowSubscription();
-      } else {
-        this.stopWorkflowSubscription();
-      }
     }
   }
 
@@ -271,6 +345,8 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     // Stop workflow subscription
     this.stopWorkflowSubscription$.next();
     this.stopWorkflowSubscription$.complete();
+    this.stopAgentSubscriptions$.next();
+    this.stopAgentSubscriptions$.complete();
   }
 
   ngAfterViewChecked(): void {
@@ -281,6 +357,10 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   }
 
   public setHoveredMessage(index: number | null): void {
+    if (!this.agentInfo) {
+      return;
+    }
+
     // When unhovered (null), automatically revert to latest step
     if (index === null && this.visibleSteps.length > 0) {
       index = this.visibleSteps.length - 1;
@@ -331,14 +411,107 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
     const userMessage = this.currentMessage.trim();
     this.currentMessage = "";
 
-    // Fire-and-forget; responses stream in via the WebSocket subscription.
+    if (!this.agentInfo) {
+      this.createAgentAndSendMessage(userMessage);
+      return;
+    }
+
     this.agentService.sendMessage(this.agentInfo.id, userMessage);
+  }
+
+  public sendSuggestedQuestion(question: string): void {
+    if (!this.canSendMessage()) {
+      return;
+    }
+    this.currentMessage = question;
+    this.sendMessage();
+  }
+
+  public showSuggestedQuestions(): boolean {
+    return this.visibleSteps.length === 0 && !this.isLoadingSteps && !this.isCreatingAgent;
+  }
+
+  public onModelTypeChange(modelType: string | null): void {
+    this.selectedModelType = modelType;
+    const agentInfo = this.agentInfo;
+    if (!agentInfo || !modelType || modelType === agentInfo.modelType) {
+      return;
+    }
+
+    const previousModelType = agentInfo.modelType;
+    this.isUpdatingModel = true;
+    this.agentService
+      .updateAgent(agentInfo.id, { modelType })
+      .pipe(
+        finalize(() => {
+          this.isUpdatingModel = false;
+          this.cdr.detectChanges();
+        }),
+        untilDestroyed(this)
+      )
+      .subscribe({
+        next: updatedAgent => {
+          this.agentInfo = updatedAgent;
+          this.selectedModelType = updatedAgent.modelType;
+          this.agentUpdated.emit(updatedAgent);
+        },
+        error: () => {
+          this.selectedModelType = previousModelType;
+        },
+      });
+  }
+
+  private createAgentAndSendMessage(userMessage: string): void {
+    if (!this.selectedModelType) {
+      this.currentMessage = userMessage;
+      this.notificationService.error("No models available. Please check the LiteLLM configuration.");
+      return;
+    }
+
+    this.isCreatingAgent = true;
+    this.isLoadingSteps = true;
+
+    this.agentService
+      .createAgent(this.selectedModelType)
+      .pipe(
+        switchMap(agentInfo => {
+          this.agentInfo = agentInfo;
+          this.agentCreated.emit(agentInfo);
+          this.attachAgent(agentInfo);
+          return this.agentService.connectAgent(agentInfo.id).pipe(map(connected => ({ agentInfo, connected })));
+        }),
+        finalize(() => {
+          this.isCreatingAgent = false;
+          this.cdr.detectChanges();
+        }),
+        untilDestroyed(this)
+      )
+      .subscribe({
+        next: ({ agentInfo, connected }) => {
+          if (!connected) {
+            this.currentMessage = userMessage;
+            this.notificationService.error("Agent connection not available");
+            return;
+          }
+          this.agentService.sendMessage(agentInfo.id, userMessage);
+        },
+        error: () => {
+          this.currentMessage = userMessage;
+          this.isLoadingSteps = false;
+        },
+      });
   }
 
   /**
    * Check if messages can be sent (only when agent is available).
    */
   public canSendMessage(): boolean {
+    if (this.isCreatingAgent || this.isLoadingModels || this.isUpdatingModel) {
+      return false;
+    }
+    if (!this.agentInfo) {
+      return !!this.selectedModelType;
+    }
     return this.agentState === AgentState.AVAILABLE;
   }
 
@@ -346,6 +519,12 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
    * Get the NG-ZORRO icon type based on current agent state.
    */
   public getStateIcon(): string {
+    if (!this.agentInfo) {
+      return "clock-circle";
+    }
+    if (this.isConnectionBusy()) {
+      return "sync";
+    }
     switch (this.agentState) {
       case AgentState.AVAILABLE:
         return "check-circle";
@@ -354,7 +533,7 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
         return "sync";
       case AgentState.UNAVAILABLE:
       default:
-        return "close-circle";
+        return "sync";
     }
   }
 
@@ -362,6 +541,9 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
    * Get the icon color based on current agent state.
    */
   public getStateIconColor(): string {
+    if (!this.agentInfo || this.isConnectionBusy()) {
+      return "#1890ff";
+    }
     switch (this.agentState) {
       case AgentState.AVAILABLE:
         return "#52c41a";
@@ -370,7 +552,7 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
         return "#1890ff";
       case AgentState.UNAVAILABLE:
       default:
-        return "#ff4d4f";
+        return "#1890ff";
     }
   }
 
@@ -378,6 +560,12 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
    * Get the tooltip text for the state icon.
    */
   public getStateTooltip(): string {
+    if (!this.agentInfo) {
+      return "Pending first message";
+    }
+    if (this.isLoadingSteps) {
+      return "Connecting to agent...";
+    }
     switch (this.agentState) {
       case AgentState.AVAILABLE:
         return "Agent is ready";
@@ -386,10 +574,36 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
       case AgentState.STOPPING:
         return "Agent is stopping...";
       case AgentState.UNAVAILABLE:
-        return "Agent is unavailable";
+        return "Connecting to agent...";
       default:
         return "Agent status unknown";
     }
+  }
+
+  public getChatTitle(): string {
+    return this.agentInfo?.name ?? "New chat";
+  }
+
+  public getModelIconType(modelType: ModelType): string {
+    return this.getModelIconTypeById(modelType.icon || modelType.id);
+  }
+
+  public getModelIconTypeById(modelIdOrIcon: string | null | undefined): string {
+    if (this.getModelIconImageSrc(modelIdOrIcon)) {
+      return "";
+    }
+    return "cloud";
+  }
+
+  public getModelIconImageSrc(modelIdOrIcon: string | null | undefined): string | null {
+    const normalized = (modelIdOrIcon ?? "").toLowerCase();
+    if (normalized === "gpt-image" || normalized.startsWith("gpt")) {
+      return "assets/svg/gpt.png";
+    }
+    if (normalized === "claude-image" || normalized.startsWith("claude")) {
+      return "assets/svg/claude.png";
+    }
+    return null;
   }
 
   public onEnterPress(event: KeyboardEvent): void {
@@ -407,11 +621,15 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   }
 
   public stopGeneration(): void {
-    this.agentService.stopGeneration(this.agentInfo.id);
+    if (this.agentInfo) {
+      this.agentService.stopGeneration(this.agentInfo.id);
+    }
   }
 
   public clearMessages(): void {
-    this.agentService.clearMessages(this.agentInfo.id);
+    if (this.agentInfo) {
+      this.agentService.clearMessages(this.agentInfo.id);
+    }
   }
 
   public getWorkspaceContextTooltip(): string {
@@ -476,7 +694,6 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
       workflowId,
       computingUnitId: this.selectedComputingUnit?.computingUnit.cuid,
       computingUnitName: this.selectedComputingUnit?.computingUnit.name,
-      computingUnitStatus: this.selectedComputingUnit?.status,
     };
   }
 
@@ -508,13 +725,18 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
    * Fetches steps from the backend to get clean JSON (without Map objects).
    */
   public exportReActSteps(): void {
+    const agentInfo = this.agentInfo;
+    if (!agentInfo) {
+      this.notificationService.warning("No ReAct steps to export");
+      return;
+    }
     if (this.visibleSteps.length === 0) {
       this.notificationService.warning("No ReAct steps to export");
       return;
     }
 
     this.agentService
-      .getReActSteps(this.agentInfo.id)
+      .getReActSteps(agentInfo.id)
       .pipe(untilDestroyed(this))
       .subscribe({
         next: (steps: ReActStep[]) => {
@@ -532,9 +754,9 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
           });
 
           const exportData = {
-            agentId: this.agentInfo.id,
-            agentName: this.agentInfo.name,
-            modelType: this.agentInfo.modelType,
+            agentId: agentInfo.id,
+            agentName: agentInfo.name,
+            modelType: agentInfo.modelType,
             exportedAt: new Date().toISOString(),
             stepCount: exportSteps.length,
             steps: exportSteps,
@@ -546,7 +768,7 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
 
           const link = document.createElement("a");
           link.href = url;
-          link.download = `${this.agentInfo.name}-react-steps-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+          link.download = `${agentInfo.name}-react-steps-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -571,11 +793,43 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   }
 
   public isConnected(): boolean {
-    return this.agentState !== AgentState.UNAVAILABLE;
+    return !this.agentInfo || this.agentState !== AgentState.UNAVAILABLE;
   }
 
   public isStopping(): boolean {
     return this.agentState === AgentState.STOPPING;
+  }
+
+  public isConnectionBusy(): boolean {
+    return !!this.agentInfo && (this.isLoadingSteps || this.agentState === AgentState.UNAVAILABLE);
+  }
+
+  public isInputDisabled(): boolean {
+    return (
+      this.isCreatingAgent ||
+      this.isLoadingModels ||
+      this.isUpdatingModel ||
+      (!!this.agentInfo && !this.canSendMessage())
+    );
+  }
+
+  public hasSelectedModelOption(): boolean {
+    return !!this.selectedModelType && this.modelTypes.some(model => model.id === this.selectedModelType);
+  }
+
+  public getLoadingText(): string {
+    if (this.isCreatingAgent) {
+      return "Starting agent...";
+    }
+    return "Loading conversation...";
+  }
+
+  public showConnectionStatus(): boolean {
+    return !!this.agentInfo && (this.isLoadingSteps || this.agentState === AgentState.UNAVAILABLE);
+  }
+
+  public getConnectionStatusText(): string {
+    return this.isLoadingSteps ? "Connecting to agent..." : "Reconnecting to agent...";
   }
 
   /**

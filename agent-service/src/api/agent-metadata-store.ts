@@ -43,6 +43,7 @@ export interface AgentMetadataStore {
   createAgent(metadata: AgentMetadata): Promise<void>;
   getAgent(agentId: string): Promise<AgentMetadata | undefined>;
   listAgentsByOwner(ownerUid: number): Promise<AgentMetadata[]>;
+  updateAgentMetadata(agentId: string, updates: { name?: string; modelType?: string }): Promise<void>;
   updateAgentConfig(agentId: string, config: AgentPersistedConfig): Promise<void>;
   updateAgentReActSteps(agentId: string, reactSteps: ReActStep[]): Promise<void>;
   deleteAgent(agentId: string): Promise<void>;
@@ -166,6 +167,21 @@ export class PostgresAgentMetadataStore implements AgentMetadataStore {
     return rows.map(rowToMetadata);
   }
 
+  async updateAgentMetadata(agentId: string, updates: { name?: string; modelType?: string }): Promise<void> {
+    const rowUpdates: Partial<Pick<AgentTable, "name" | "model_type">> = {};
+    if (updates.name !== undefined) {
+      rowUpdates.name = updates.name;
+    }
+    if (updates.modelType !== undefined) {
+      rowUpdates.model_type = updates.modelType;
+    }
+    if (Object.keys(rowUpdates).length === 0) {
+      return;
+    }
+
+    await this.db.withSchema(AGENT_SCHEMA).updateTable("agent").set(rowUpdates).where("aid", "=", agentId).execute();
+  }
+
   async updateAgentConfig(agentId: string, config: AgentPersistedConfig): Promise<void> {
     await this.db
       .withSchema(AGENT_SCHEMA)
@@ -215,6 +231,18 @@ export class InMemoryAgentMetadataStore implements AgentMetadataStore {
       .filter(agent => agent.ownerUid === ownerUid)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map(agent => this.cloneMetadata(agent));
+  }
+
+  async updateAgentMetadata(agentId: string, updates: { name?: string; modelType?: string }): Promise<void> {
+    const metadata = this.agents.get(agentId);
+    if (metadata) {
+      if (updates.name !== undefined) {
+        metadata.name = updates.name;
+      }
+      if (updates.modelType !== undefined) {
+        metadata.modelType = updates.modelType;
+      }
+    }
   }
 
   async updateAgentConfig(agentId: string, config: AgentPersistedConfig): Promise<void> {

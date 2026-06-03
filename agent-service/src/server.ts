@@ -29,18 +29,15 @@ import { type AgentMetadata, type AgentMetadataStore, PostgresAgentMetadataStore
 import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
 import { env } from "./config/env";
 import { createLogger } from "./logger";
+import { DEFAULT_AGENT_NAME } from "./types/agent";
 
 const log = createLogger("Server");
 const wsLog = createLogger("WS");
-import type {
-  AgentInfo,
-  AgentTaskContext,
-  CreateAgentRequest,
-  ReActStep,
-} from "./types/agent";
+import type { AgentInfo, AgentTaskContext, CreateAgentRequest, ReActStep, UpdateAgentRequest } from "./types/agent";
 
 const agentStore = new Map<string, TexeraAgent>();
 let agentMetadataStore: AgentMetadataStore = new PostgresAgentMetadataStore();
+type AgentMetadataUpdate = Pick<UpdateAgentRequest, "name" | "modelType">;
 
 // Bearer token from the Authorization header (HTTP) or the access-token query
 // parameter (WebSocket, since browsers cannot set headers on the WS handshake).
@@ -82,20 +79,11 @@ async function createAgentInstance(options: {
   reactSteps?: ReActStep[];
 }): Promise<{ agentId: string; agent: TexeraAgent }> {
   const agentId = options.agentId ?? randomUUID();
-  const config = getBackendConfig();
-
-  const openai = createOpenAI({
-    baseURL: `${config.modelsEndpoint}/api`,
-    apiKey: env.LLM_API_KEY,
-  });
-
-  // Reasoning effort variants are configured as separate model entries in litellm-config.yaml
-  // with extra_body to inject reasoning_effort, bypassing LiteLLM's param validation.
   const agent = new TexeraAgent({
-    model: openai.chat(options.modelType),
+    model: createAgentModel(options.modelType),
     modelType: options.modelType,
     agentId,
-    agentName: options.name || "Bob",
+    agentName: options.name || DEFAULT_AGENT_NAME,
     createdAt: options.createdAt,
     persistedConfig: options.config,
     reactSteps: options.reactSteps,
@@ -107,6 +95,19 @@ async function createAgentInstance(options: {
   log.info({ agentId }, "created agent");
 
   return { agentId, agent };
+}
+
+function createAgentModel(modelType: string) {
+  const config = getBackendConfig();
+
+  const openai = createOpenAI({
+    baseURL: `${config.modelsEndpoint}/api`,
+    apiKey: env.LLM_API_KEY,
+  });
+
+  // Reasoning effort variants are configured as separate model entries in litellm-config.yaml
+  // with extra_body to inject reasoning_effort, bypassing LiteLLM's param validation.
+  return openai.chat(modelType);
 }
 
 function getAgentInfo(agentId: string, agent: TexeraAgent): AgentInfo {
@@ -143,6 +144,32 @@ async function getAgent(agentId: string, metadata?: AgentMetadata): Promise<Texe
 
 async function persistAgentReActSteps(agentId: string, agent: TexeraAgent): Promise<void> {
   await agentMetadataStore.updateAgentReActSteps(agentId, agent.getAllSteps());
+}
+
+function parseAgentMetadataUpdate(body: UpdateAgentRequest): AgentMetadataUpdate {
+  const updates: AgentMetadataUpdate = {};
+
+  if (body.name !== undefined) {
+    const name = body.name.trim();
+    if (!name) {
+      throw new Error("name must not be empty");
+    }
+    updates.name = name;
+  }
+
+  if (body.modelType !== undefined) {
+    const modelType = body.modelType.trim();
+    if (!modelType) {
+      throw new Error("modelType must not be empty");
+    }
+    updates.modelType = modelType;
+  }
+
+  if (updates.name === undefined && updates.modelType === undefined) {
+    throw new Error("agent update is required");
+  }
+
+  return updates;
 }
 
 export interface AgentRequestContext {
@@ -211,6 +238,14 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
     if (errorMessage === "modelType is required") {
       set.status = 400;
       return { error: "modelType is required" };
+    }
+    if (
+      errorMessage === "name must not be empty" ||
+      errorMessage === "modelType must not be empty" ||
+      errorMessage === "agent update is required"
+    ) {
+      set.status = 400;
+      return { error: errorMessage };
     }
     if (errorMessage === "workflowId is required" || errorMessage === "computingUnitId is required") {
       set.status = 400;
@@ -300,6 +335,29 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       stepCount: agent.getReActSteps().length,
     };
   })
+
+  .patch(
+    "/:id",
+    async ({ params: { id }, body }) => {
+      const updates = parseAgentMetadataUpdate(body as UpdateAgentRequest);
+      const agent = await getAgent(id);
+
+      agent.updateAgentMetadata({
+        name: updates.name,
+        modelType: updates.modelType,
+        model: updates.modelType ? createAgentModel(updates.modelType) : undefined,
+      });
+      await agentMetadataStore.updateAgentMetadata(id, updates);
+
+      return getAgentInfo(id, agent);
+    },
+    {
+      body: t.Object({
+        name: t.Optional(t.String()),
+        modelType: t.Optional(t.String()),
+      }),
+    }
+  )
 
   .delete("/:id", async ({ params: { id } }) => {
     const agent = agentStore.get(id);

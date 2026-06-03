@@ -102,7 +102,6 @@ import { AdminGuardService } from "./dashboard/service/admin/guard/admin-guard.s
 import { ContextMenuComponent } from "./workspace/component/workflow-editor/context-menu/context-menu/context-menu.component";
 import { CoeditorUserIconComponent } from "./workspace/component/menu/coeditor-user-icon/coeditor-user-icon.component";
 import { AgentChatComponent } from "./workspace/component/agent/agent-panel/agent-chat/agent-chat.component";
-import { AgentRegistrationComponent } from "./workspace/component/agent/agent-panel/agent-registration/agent-registration.component";
 import { DatasetFileSelectorComponent } from "./workspace/component/dataset-file-selector/dataset-file-selector.component";
 import { DatasetVersionSelectorComponent } from "./workspace/component/dataset-version-selector/dataset-version-selector.component";
 import { DatasetSelectionModalComponent } from "./workspace/component/dataset-selection-modal/dataset-selection-modal.component";
@@ -332,7 +331,6 @@ registerLocaleData(en);
     ContextMenuComponent,
     CoeditorUserIconComponent,
     AgentChatComponent,
-    AgentRegistrationComponent,
     AgentInteractionComponent,
     DatasetFileSelectorComponent,
     DatasetVersionSelectorComponent,

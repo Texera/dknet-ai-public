@@ -17,23 +17,21 @@
  under the License.
 -->
 
-<!-- Agent Chat Container (used within tabs) -->
 <div class="agent-chat-container">
-  <!-- Toolbar -->
   <div class="chat-toolbar">
     <div class="chat-toolbar-controls">
       <div class="toolbar-left">
-        <!-- Agent model info with state icon -->
-        <div class="toolbar-item">
+        <div
+          class="agent-status-chip"
+          nz-tooltip
+          [nzTooltipTitle]="getStateTooltip()">
           <i
             nz-icon
             [nzType]="getStateIcon()"
-            [nzSpin]="isGenerating()"
-            nz-tooltip
-            [nzTooltipTitle]="getStateTooltip()"
+            [nzSpin]="isGenerating() || isStopping() || isConnectionBusy()"
             [style.color]="getStateIconColor()"
-            style="font-size: 16px; margin-right: 6px; vertical-align: middle"></i>
-          <small style="color: #888"> Model: <strong>{{ agentInfo.modelType }}</strong> </small>
+            nzTheme="outline"></i>
+          <span>{{ getChatTitle() }}</span>
         </div>
 
         <div
@@ -55,7 +53,6 @@
       </div>
 
       <div class="toolbar-actions">
-        <!-- Export ReAct steps button -->
         <div class="toolbar-item">
           <button
             nz-button
@@ -71,7 +68,6 @@
           </button>
         </div>
 
-        <!-- Clear button (when available) -->
         <div class="toolbar-item">
           <button
             *ngIf="isAvailable()"
@@ -91,22 +87,41 @@
     </div>
   </div>
 
-  <!-- Custom Chat Interface -->
   <div class="chat-content-wrapper">
-    <!-- Messages and Input Column -->
     <div class="chat-main-column">
-      <!-- Messages List -->
       <div
         #messageContainer
-        class="messages-container">
-        <!-- Initial loading: connecting and fetching the conversation history -->
+        class="messages-container"
+        [class.empty-messages]="visibleSteps.length === 0 && !isLoadingSteps && !isCreatingAgent">
         <div
-          *ngIf="isLoadingSteps && visibleSteps.length === 0"
+          *ngIf="(isLoadingSteps || isCreatingAgent) && visibleSteps.length === 0"
           class="initial-loading">
           <nz-spin
             nzSimple
             nzSize="large"></nz-spin>
-          <span class="initial-loading-text">Loading conversation…</span>
+          <span class="initial-loading-text">{{ getLoadingText() }}</span>
+        </div>
+
+        <div
+          *ngIf="showSuggestedQuestions()"
+          class="suggested-questions">
+          <nz-card
+            *ngFor="let question of suggestedQuestions"
+            nzHoverable
+            class="suggested-question-card"
+            [class.disabled]="!canSendMessage()"
+            (click)="sendSuggestedQuestion(question.prompt)">
+            <div class="suggested-question-content">
+              <i
+                nz-icon
+                [nzType]="question.icon"
+                nzTheme="outline"></i>
+              <div class="suggested-question-text">
+                <span class="suggested-question-title">{{ question.title }}</span>
+                <span class="suggested-question-prompt">{{ question.prompt }}</span>
+              </div>
+            </div>
+          </nz-card>
         </div>
 
         <div
@@ -114,7 +129,6 @@
           class="message"
           [class.user-message]="response.role === 'user'"
           [class.ai-message]="response.role === 'agent'">
-          <!-- Show header for user messages or when isBegin is true for agent messages -->
           <div
             class="message-header"
             *ngIf="response.role === 'user' || response.isBegin">
@@ -122,34 +136,31 @@
               nz-icon
               [nzType]="response.role === 'user' ? 'user' : 'robot'"
               nzTheme="outline"></i>
-            <span class="message-role">{{ response.role === 'user' ? 'You' : agentInfo.name }}</span>
+            <span class="message-role">{{ response.role === 'user' ? 'You' : agentInfo?.name || 'Agent' }}</span>
           </div>
 
-          <!-- Message content with hover button -->
           <div
             class="message-content"
             (mouseenter)="setHoveredMessage(i)"
-            (mouseleave)="setHoveredMessage(null)"
-            style="position: relative">
+            (mouseleave)="setHoveredMessage(null)">
             <div
               *ngIf="response.content"
-              class="message-content">
+              class="message-text">
               <markdown [data]="response.content"></markdown>
             </div>
             <div
               *ngIf="response.toolCalls && response.toolCalls.length > 0"
-              style="color: #8c8c8c; font-style: italic">
+              class="tool-call-summary">
               Execute {{ response.toolCalls.length }} tool{{ response.toolCalls.length > 1 ? 's' : '' }}
             </div>
 
-            <!-- Details button (shown on hover) - for any message with details -->
             <button
               *ngIf="hoveredMessageIndex === i && (response.toolCalls?.length || response.usage)"
               nz-button
               nzType="text"
               nzSize="small"
               (click)="showResponseDetails(response)"
-              style="position: absolute; top: 0; right: 0; opacity: 0.7"
+              class="message-details-button"
               nz-tooltip
               nzTooltipTitle="View details">
               <i
@@ -160,7 +171,6 @@
           </div>
         </div>
 
-        <!-- Loading indicator -->
         <div
           *ngIf="isGenerating()"
           class="message ai-message loading-message">
@@ -169,17 +179,16 @@
               nz-icon
               nzType="robot"
               nzTheme="outline"></i>
-            <span class="message-role">{{ agentInfo.name }}</span>
+            <span class="message-role">{{ agentInfo?.name || 'Agent' }}</span>
           </div>
           <div class="message-content">
             <nz-spin
               nzSimple
               nzSize="small"></nz-spin>
-            <span style="margin-left: 8px">Thinking...</span>
+            <span class="loading-message-text">Thinking...</span>
           </div>
         </div>
 
-        <!-- Stopping indicator -->
         <div
           *ngIf="isStopping()"
           class="message ai-message loading-message">
@@ -188,67 +197,147 @@
               nz-icon
               nzType="robot"
               nzTheme="outline"></i>
-            <span class="message-role">{{ agentInfo.name }}</span>
+            <span class="message-role">{{ agentInfo?.name || 'Agent' }}</span>
           </div>
           <div class="message-content">
             <nz-spin
               nzSimple
               nzSize="small"></nz-spin>
-            <span style="margin-left: 8px">Stopping...</span>
+            <span class="loading-message-text">Stopping...</span>
           </div>
         </div>
       </div>
 
-      <!-- Input Area -->
       <div class="input-area">
-        <textarea
-          #messageInput
-          nz-input
-          [(ngModel)]="currentMessage"
-          placeholder="Ask me anything about your data science tasks..."
-          [nzAutosize]="{ minRows: 1, maxRows: 4 }"
-          (keydown.enter)="onEnterPress($any($event))"
-          [disabled]="!canSendMessage()"></textarea>
-        <button
-          nz-button
-          nzType="primary"
-          [disabled]="!currentMessage.trim() || !canSendMessage()"
-          (click)="sendMessage()">
-          <i
-            nz-icon
-            nzType="send"
-            nzTheme="outline"></i>
-        </button>
-        <button
-          *ngIf="isGenerating()"
-          nz-button
-          nzType="default"
-          nzDanger
-          (click)="stopGeneration()">
-          <i
-            nz-icon
-            nzType="stop"
-            nzTheme="outline"></i>
-        </button>
+        <div class="composer-shell">
+          <div class="composer-model-row">
+            <nz-select
+              class="model-select"
+              nzSize="small"
+              nzPlaceHolder="Model"
+              [nzLoading]="isLoadingModels"
+              [nzDisabled]="isCreatingAgent || isLoadingModels || isUpdatingModel || (!!agentInfo && !isAvailable())"
+              [nzCustomTemplate]="selectedModelTemplate"
+              [(ngModel)]="selectedModelType"
+              (ngModelChange)="onModelTypeChange($event)">
+              <nz-option
+                *ngIf="agentInfo && selectedModelType && !hasSelectedModelOption()"
+                [nzValue]="selectedModelType"
+                [nzLabel]="selectedModelType"
+                nzCustomContent>
+                <span class="model-option">
+                  <ng-container *ngIf="getModelIconImageSrc(selectedModelType) as iconSrc; else selectedModelIcon">
+                    <img
+                      class="model-image-icon"
+                      [src]="iconSrc"
+                      alt="" />
+                  </ng-container>
+                  <ng-template #selectedModelIcon>
+                    <i
+                      nz-icon
+                      [nzType]="getModelIconTypeById(selectedModelType)"
+                      nzTheme="outline"></i>
+                  </ng-template>
+                  <span>{{ selectedModelType }}</span>
+                </span>
+              </nz-option>
+              <nz-option
+                *ngFor="let modelType of modelTypes"
+                [nzValue]="modelType.id"
+                [nzLabel]="modelType.name"
+                nzCustomContent>
+                <span class="model-option">
+                  <ng-container *ngIf="getModelIconImageSrc(modelType.icon || modelType.id) as iconSrc; else modelIcon">
+                    <img
+                      class="model-image-icon"
+                      [src]="iconSrc"
+                      alt="" />
+                  </ng-container>
+                  <ng-template #modelIcon>
+                    <i
+                      nz-icon
+                      [nzType]="getModelIconType(modelType)"
+                      nzTheme="outline"></i>
+                  </ng-template>
+                  <span>{{ modelType.name }}</span>
+                </span>
+              </nz-option>
+            </nz-select>
+          </div>
+
+          <div class="composer-input-row">
+            <textarea
+              #messageInput
+              nz-input
+              [(ngModel)]="currentMessage"
+              placeholder="Ask me anything about your data science tasks..."
+              [nzAutosize]="{ minRows: 2, maxRows: 6 }"
+              (keydown.enter)="onEnterPress($any($event))"
+              [disabled]="isInputDisabled()"></textarea>
+
+            <div class="composer-actions">
+              <button
+                nz-button
+                nzType="primary"
+                class="composer-icon-button"
+                [disabled]="!currentMessage.trim() || !canSendMessage()"
+                (click)="sendMessage()">
+                <i
+                  nz-icon
+                  nzType="send"
+                  nzTheme="outline"></i>
+              </button>
+              <button
+                *ngIf="isGenerating()"
+                nz-button
+                nzType="default"
+                nzDanger
+                class="composer-icon-button"
+                (click)="stopGeneration()">
+                <i
+                  nz-icon
+                  nzType="stop"
+                  nzTheme="outline"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ng-template
+          #selectedModelTemplate
+          let-selected>
+          <span class="model-option selected-model-option">
+            <ng-container *ngIf="getModelIconImageSrc(selected?.nzValue) as iconSrc; else selectedTemplateModelIcon">
+              <img
+                class="model-image-icon"
+                [src]="iconSrc"
+                alt="" />
+            </ng-container>
+            <ng-template #selectedTemplateModelIcon>
+              <i
+                nz-icon
+                [nzType]="getModelIconTypeById(selected?.nzValue)"
+                nzTheme="outline"></i>
+            </ng-template>
+            <span>{{ selected?.nzLabel }}</span>
+          </span>
+        </ng-template>
       </div>
     </div>
   </div>
 
-  <!-- Connection Status -->
   <div
-    *ngIf="!isConnected()"
-    class="connection-warning">
-    <i
-      nz-icon
-      nzType="warning"
-      nzTheme="fill"></i>
-    <span>Agent is disconnected. Please check your connection.</span>
+    *ngIf="showConnectionStatus()"
+    class="connection-status">
+    <nz-spin
+      nzSimple
+      nzSize="small"></nz-spin>
+    <span>{{ getConnectionStatusText() }}</span>
   </div>
 </div>
 
-<!-- Response Details Modal -->
-<!-- ReAct Step Detail Modal -->
 <texera-react-step-detail-modal
+  *ngIf="agentInfo"
   [(visible)]="isDetailsModalVisible"
   [step]="selectedResponse"
   [agentId]="agentInfo.id">

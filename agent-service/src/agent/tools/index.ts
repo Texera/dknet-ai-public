@@ -22,3 +22,4 @@ export * from "./workflow-crud-tools";
 export * from "./workflow-execution-tools";
 export * from "./dataset-tools";
 export * from "./mcp-remote-tools";
+export * from "./operator-metadata-tools";

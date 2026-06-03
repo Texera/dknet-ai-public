@@ -33,6 +33,7 @@ import type {
 import {
   AgentState as AgentStateEnum,
   DEFAULT_AGENT_SETTINGS,
+  DEFAULT_AGENT_NAME,
   OperatorResultSerializationMode,
   INITIAL_STEP_ID,
 } from "../types/agent";
@@ -46,6 +47,12 @@ import {
   TOOL_NAME_DELETE_OPERATOR,
   type ToolContext,
 } from "./tools/workflow-crud-tools";
+import {
+  createGetOperatorSchemaTool,
+  createListOperatorTypesTool,
+  TOOL_NAME_GET_OPERATOR_SCHEMA,
+  TOOL_NAME_LIST_OPERATOR_TYPES,
+} from "./tools/operator-metadata-tools";
 import {
   createExecuteOperatorTool,
   executeOperatorAndFormat,
@@ -68,7 +75,6 @@ import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/c
 import { persistWorkflow, retrieveWorkflow } from "../api/workflow-api";
 import { createLogger } from "../logger";
 import type { Logger } from "pino";
-import { limitToolExecutionOutputs } from "./tools/tools-utility";
 
 export interface TexeraAgentConfig {
   model: LanguageModel;
@@ -102,8 +108,8 @@ type ReActStepCallback = (step: ReActStep) => void;
  */
 export class TexeraAgent {
   readonly agentId: string;
-  readonly agentName: string;
-  readonly modelType: string;
+  agentName: string;
+  modelType: string;
   readonly createdAt: Date;
 
   private state: AgentStateEnum = AgentStateEnum.AVAILABLE;
@@ -138,7 +144,7 @@ export class TexeraAgent {
 
   constructor(config: TexeraAgentConfig) {
     this.agentId = config.agentId;
-    this.agentName = config.agentName || `Agent-${config.agentId}`;
+    this.agentName = config.agentName || DEFAULT_AGENT_NAME;
     this.modelType = config.modelType;
     this.createdAt = config.createdAt ?? new Date();
     this.model = config.model;
@@ -200,7 +206,7 @@ export class TexeraAgent {
   }
 
   private rebuildSystemPrompt(): void {
-    this.systemPrompt = buildSystemPrompt(this.metadataStore, this.settings.allowedOperatorTypes);
+    this.systemPrompt = buildSystemPrompt(this.metadataStore);
     this.settings.systemPrompt = this.systemPrompt;
   }
 
@@ -226,9 +232,6 @@ export class TexeraAgent {
     }
     if (settings.maxSteps !== undefined) {
       this.settings.maxSteps = settings.maxSteps;
-    }
-    if (settings.allowedOperatorTypes !== undefined) {
-      this.settings.allowedOperatorTypes = settings.allowedOperatorTypes;
     }
   }
 
@@ -309,14 +312,11 @@ export class TexeraAgent {
 
     const context: ToolContext = {
       metadataStore: this.metadataStore,
-      settings: {
-        maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
-        toolTimeoutMs: this.settings.toolTimeoutMs,
-        executionTimeoutMs: this.settings.executionTimeoutMs,
-      },
     };
 
     const tools: Record<string, any> = {
+      [TOOL_NAME_LIST_OPERATOR_TYPES]: createListOperatorTypesTool(this.metadataStore),
+      [TOOL_NAME_GET_OPERATOR_SCHEMA]: createGetOperatorSchemaTool(this.metadataStore),
       [TOOL_NAME_DELETE_OPERATOR]: createDeleteOperatorTool(this.workflowState, context),
       [TOOL_NAME_ADD_OPERATOR]: createAddOperatorTool(this.workflowState, operatorSchemas, context),
       [TOOL_NAME_MODIFY_OPERATOR]: createModifyOperatorTool(this.workflowState, context),
@@ -340,7 +340,7 @@ export class TexeraAgent {
 
     Object.assign(tools, createRemoteMcpTools(this.mcpToolRegistry));
 
-    return limitToolExecutionOutputs(tools, () => this.settings.maxOperatorResultCharLimit);
+    return tools;
   }
 
   getState(): AgentStateEnum {
@@ -482,7 +482,6 @@ export class TexeraAgent {
       executionTimeoutMinutes: Math.round(this.settings.executionTimeoutMs / 60000),
       disabledTools: Array.from(this.settings.disabledTools),
       maxSteps: this.settings.maxSteps,
-      allowedOperatorTypes: this.settings.allowedOperatorTypes,
     };
   }
 
@@ -494,6 +493,18 @@ export class TexeraAgent {
     };
   }
 
+  updateAgentMetadata(updates: { name?: string; modelType?: string; model?: LanguageModel }): void {
+    if (updates.name !== undefined) {
+      this.agentName = updates.name;
+    }
+    if (updates.modelType !== undefined) {
+      this.modelType = updates.modelType;
+    }
+    if (updates.model !== undefined) {
+      this.model = updates.model;
+    }
+  }
+
   updateSettings(updates: {
     maxOperatorResultCharLimit?: number;
     maxOperatorResultCellCharLimit?: number;
@@ -502,10 +513,7 @@ export class TexeraAgent {
     executionTimeoutMs?: number;
     disabledTools?: Set<string>;
     maxSteps?: number;
-    allowedOperatorTypes?: string[];
   }): void {
-    let promptNeedsRebuild = false;
-
     if (updates.maxOperatorResultCharLimit !== undefined) {
       this.settings.maxOperatorResultCharLimit = updates.maxOperatorResultCharLimit;
     }
@@ -526,14 +534,6 @@ export class TexeraAgent {
     }
     if (updates.maxSteps !== undefined) {
       this.settings.maxSteps = updates.maxSteps;
-    }
-    if (updates.allowedOperatorTypes !== undefined) {
-      this.settings.allowedOperatorTypes = updates.allowedOperatorTypes;
-      promptNeedsRebuild = true;
-    }
-
-    if (promptNeedsRebuild) {
-      this.rebuildSystemPrompt();
     }
 
     this.tools = this.createTools();

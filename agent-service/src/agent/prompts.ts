@@ -273,48 +273,25 @@ Result:
 - **Handle messy data files**: Load data files directly in a single operator. Real-world data files are often malformed — they may have wrong delimiters, missing or misplaced headers, metadata/comment rows, or multiple tables in one file. After loading, inspect the result. If column names look auto-generated (e.g., \`Unnamed: 0\`) or a data value appears as a header, adjust the loading parameters (e.g., \`header=\`, \`skiprows=\`, \`sep=\`) by modifying the data loading operator.
 - **Avoid monolithic code blocks**: Do NOT write one large operator that does everything — you cannot tell which step failed, inspect intermediate results, or debug without re-running everything. Instead, decompose into separate operators each doing ONE thing (e.g., filter → join → aggregate → filter → join → final filter). Each can be executed and verified independently.
 
-## Available Operators
+## Operator Discovery
 
-You have the following operators available:
+Operator types and property schemas are discovered through tools instead of being embedded in this prompt.
 
-{{OPERATOR_SCHEMA}}
+- Use \`list_operator_types\` to get only the available operator type names from the backend metadata store.
+- Use one of those exact operator type names with \`get_operator_schema\` before setting properties in \`addOperator\` or \`modifyOperator\`.
+- \`get_operator_schema\` returns the trimmed schema: required fields and the property details needed for valid operator properties.
+- Do not guess operator property names from memory. If an operator type or property is uncertain, call these tools first.
 `;
 
-function buildAllowedOperatorSchemas(
-  metadataStore: WorkflowSystemMetadata,
-  allowedOperatorTypes: string[] = []
-): string {
-  const schemas: string[] = [];
-
-  const operatorTypes =
-    allowedOperatorTypes.length > 0 ? allowedOperatorTypes : Object.keys(metadataStore.getAllOperatorTypes());
-
-  for (const operatorType of operatorTypes) {
-    const compactSchema = metadataStore.getCompactSchema(operatorType);
-    const description = metadataStore.getDescription(operatorType);
-
-    if (compactSchema) {
-      schemas.push(
-        `## ${operatorType}\n` +
-          (description ? `Description: ${description}\n` : "") +
-          `Schema:\n\`\`\`json\n${JSON.stringify(compactSchema, null, 2)}\n\`\`\``
-      );
-    }
-  }
-
-  return schemas.length > 0 ? schemas.join("\n\n") : "No operators available.";
-}
-
-export function buildSystemPrompt(metadataStore: WorkflowSystemMetadata, allowedOperatorTypes: string[] = []): string {
-  const operatorSchemas = buildAllowedOperatorSchemas(metadataStore, allowedOperatorTypes);
-  const allowsAll = allowedOperatorTypes.length === 0;
-  const pythonAllowed = allowsAll || allowedOperatorTypes.some(t => PYTHON_UDF_OPERATOR_TYPES.includes(t));
-  const rAllowed = allowsAll || allowedOperatorTypes.some(t => R_UDF_OPERATOR_TYPES.includes(t));
+export function buildSystemPrompt(metadataStore: WorkflowSystemMetadata): string {
+  const pythonAllowed = PYTHON_UDF_OPERATOR_TYPES.some(t => metadataStore.operatorTypeExists(t));
+  const rAllowed = R_UDF_OPERATOR_TYPES.some(t => metadataStore.operatorTypeExists(t));
 
   const extraSections: string[] = [];
   if (pythonAllowed) extraSections.push(PYTHON_UDF_INSTRUCTIONS);
   if (rAllowed) extraSections.push(R_UDF_INSTRUCTIONS);
 
-  const base = SYSTEM_PROMPT_TEMPLATE.replace("{{OPERATOR_SCHEMA}}", operatorSchemas);
-  return extraSections.length > 0 ? `${base}\n${extraSections.join("\n\n")}\n` : base;
+  return extraSections.length > 0
+    ? `${SYSTEM_PROMPT_TEMPLATE}\n${extraSections.join("\n\n")}\n`
+    : SYSTEM_PROMPT_TEMPLATE;
 }

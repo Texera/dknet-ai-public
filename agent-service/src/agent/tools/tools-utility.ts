@@ -50,52 +50,6 @@ export function limitResolvedText(text: string, maxChars?: number): string {
   return `${text.slice(0, maxChars - TRUNCATED_SUFFIX.length)}${TRUNCATED_SUFFIX}`;
 }
 
-function stringifyToolOutput(output: unknown): string {
-  if (typeof output === "string") {
-    return output;
-  }
-  try {
-    const serialized = JSON.stringify(output);
-    if (serialized !== undefined) {
-      return serialized;
-    }
-  } catch {}
-  return String(output);
-}
-
-export function limitResolvedToolOutput(output: unknown, maxChars?: number): unknown {
-  if (!isValidLimit(maxChars)) {
-    return output;
-  }
-
-  if (typeof output === "string") {
-    return limitResolvedText(output, maxChars);
-  }
-
-  const serialized = stringifyToolOutput(output);
-  if (serialized.length <= maxChars) {
-    return output;
-  }
-  return limitResolvedText(serialized, maxChars);
-}
-
-export function limitToolExecutionOutputs(
-  tools: Record<string, any>,
-  getMaxChars: () => number | undefined
-): Record<string, any> {
-  for (const toolDef of Object.values(tools)) {
-    if (!toolDef || typeof toolDef.execute !== "function") {
-      continue;
-    }
-    const execute = toolDef.execute;
-    toolDef.execute = async (...args: any[]) => {
-      const output = await execute.apply(toolDef, args);
-      return limitResolvedToolOutput(output, getMaxChars());
-    };
-  }
-  return tools;
-}
-
 function formatLinkDescription(sourceOperatorId: string, targetOperatorId: string): string {
   return `${sourceOperatorId} --> ${targetOperatorId}`;
 }

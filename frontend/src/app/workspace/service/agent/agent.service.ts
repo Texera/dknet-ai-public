@@ -23,6 +23,7 @@ import {
   Observable,
   Subject,
   BehaviorSubject,
+  combineLatest,
   catchError,
   filter,
   map,
@@ -33,8 +34,10 @@ import {
   throwError,
   interval,
   switchMap,
+  take,
   takeUntil,
   distinctUntilChanged,
+  timeout,
 } from "rxjs";
 import { NotificationService } from "../../../common/service/notification/notification.service";
 import { WorkflowPersistService } from "../../../common/service/workflow-persist/workflow-persist.service";
@@ -764,6 +767,44 @@ export class AgentService {
     return true;
   }
 
+  private isReadyForMessages(tracking: AgentStateTracking): boolean {
+    return (
+      tracking.websocket?.readyState === WebSocket.OPEN &&
+      !tracking.initializingSubject.getValue() &&
+      tracking.stateSubject.getValue() !== AgentState.UNAVAILABLE
+    );
+  }
+
+  /**
+   * Activate an agent and emit true once the WebSocket has delivered its initial
+   * state/history. This is used by the lazy first-message flow so the message is
+   * not sent before the socket is ready.
+   */
+  public connectAgent(agentId: string): Observable<boolean> {
+    return defer(() => {
+      if (!this.activateAgent(agentId)) {
+        return of(false);
+      }
+
+      const tracking = this.agentStateTracking.get(agentId);
+      if (!tracking) {
+        return of(false);
+      }
+
+      if (this.isReadyForMessages(tracking)) {
+        return of(true);
+      }
+
+      return combineLatest([tracking.initializingSubject, tracking.stateSubject]).pipe(
+        filter(([initializing]) => !initializing),
+        take(1),
+        map(([, state]) => state !== AgentState.UNAVAILABLE && tracking.websocket?.readyState === WebSocket.OPEN),
+        timeout({ first: AgentService.INIT_TIMEOUT_MS + 1000, with: () => of(false) }),
+        catchError(() => of(false))
+      );
+    });
+  }
+
   /**
    * Deactivate an agent - closes WebSocket connection and stops workflow polling.
    * Call this when the user switches away from an agent's tab.
@@ -834,23 +875,8 @@ export class AgentService {
 
       return this.http.post<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents`, body, this.agentHeaders()).pipe(
         map(response => {
-          const agentInfo: AgentInfo = {
-            id: response.id,
-            name: response.name,
-            modelType: response.modelType,
-            isBaselineMode: false,
-            createdAt: new Date(response.createdAt),
-            state: this.mapStateToAgentState(response.state),
-            delegate: response.delegate
-              ? {
-                  userInfo: response.delegate.userInfo,
-                  workflowId: response.delegate.workflowId,
-                  workflowName: response.delegate.workflowName,
-                }
-              : undefined,
-          };
-
-          this.agents.set(response.id, agentInfo);
+          const agentInfo = this.apiAgentToAgentInfo(response);
+          this.agents.set(agentInfo.id, agentInfo);
           const tracking = this.getOrCreateStateTracking(response.id);
           // Set the initial state from the API response (agent is AVAILABLE after creation)
           tracking.stateSubject.next(agentInfo.state || AgentState.AVAILABLE);
@@ -881,27 +907,36 @@ export class AgentService {
       // Fetch from API if not in cache
       return this.http.get<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, this.agentHeaders(agentId)).pipe(
         map(response => {
-          const agentInfo: AgentInfo = {
-            id: response.id,
-            name: response.name,
-            modelType: response.modelType,
-            isBaselineMode: false,
-            createdAt: new Date(response.createdAt),
-            state: this.mapStateToAgentState(response.state),
-            delegate: response.delegate
-              ? {
-                  userInfo: response.delegate.userInfo,
-                  workflowId: response.delegate.workflowId,
-                  workflowName: response.delegate.workflowName,
-                }
-              : undefined,
-          };
-          this.agents.set(response.id, agentInfo);
+          const agentInfo = this.apiAgentToAgentInfo(response);
+          this.agents.set(agentInfo.id, agentInfo);
           return agentInfo;
         }),
         catchError(() => throwError(() => new Error(`Agent with ID ${agentId} not found`)))
       );
     });
+  }
+
+  public updateAgent(agentId: string, updates: Partial<Pick<AgentInfo, "name" | "modelType">>): Observable<AgentInfo> {
+    return this.http
+      .patch<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, updates, this.agentHeaders(agentId))
+      .pipe(
+        map(response => {
+          const agentInfo = this.apiAgentToAgentInfo(response);
+          this.agents.set(agentInfo.id, agentInfo);
+          const tracking = this.agentStateTracking.get(agentInfo.id);
+          if (tracking && agentInfo.state) {
+            tracking.stateSubject.next(agentInfo.state);
+          }
+          this.agentChangeSubject.next();
+          return agentInfo;
+        }),
+        catchError((error: unknown) => {
+          const err = error as { error?: { error?: string }; message?: string };
+          const errorMsg = err.error?.error || err.message || "Failed to update agent";
+          this.notificationService.error(errorMsg);
+          return throwError(() => new Error(errorMsg));
+        })
+      );
   }
 
   /**
@@ -958,7 +993,7 @@ export class AgentService {
             id: model.id,
             name: this.formatModelName(model.id),
             description: `Model: ${model.id}`,
-            icon: "robot",
+            icon: this.getModelIcon(model.id),
           }))
         ),
         catchError((error: unknown) => {
@@ -969,6 +1004,17 @@ export class AgentService {
       );
     }
     return this.modelTypes$;
+  }
+
+  private getModelIcon(modelId: string): string {
+    const normalized = modelId.toLowerCase();
+    if (normalized.startsWith("gpt")) {
+      return "gpt-image";
+    }
+    if (normalized.startsWith("claude")) {
+      return "claude-image";
+    }
+    return "cloud";
   }
 
   private formatModelName(modelId: string): string {

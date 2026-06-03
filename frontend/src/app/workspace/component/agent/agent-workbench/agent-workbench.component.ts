@@ -18,23 +18,27 @@
  */
 
 import { Component, HostListener, Input, OnChanges, OnDestroy, OnInit, SimpleChanges } from "@angular/core";
+import { FormsModule } from "@angular/forms";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { NgFor, NgIf } from "@angular/common";
 import { NzButtonComponent } from "ng-zorro-antd/button";
-import { NzWaveDirective } from "ng-zorro-antd/core/wave";
-import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
-import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
 import { NzIconDirective } from "ng-zorro-antd/icon";
-import { NzTabsComponent, NzTabBarExtraContentDirective, NzTabComponent, NzTabDirective } from "ng-zorro-antd/tabs";
+import { NzInputDirective } from "ng-zorro-antd/input";
+import { NzSpinComponent } from "ng-zorro-antd/spin";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+import { distinctUntilChanged } from "rxjs/operators";
+import { UserService } from "../../../../common/service/user/user.service";
 import { AgentService, AgentInfo } from "../../../service/agent/agent.service";
-import { AgentRegistrationComponent } from "../agent-panel/agent-registration/agent-registration.component";
 import { AgentChatComponent } from "../agent-panel/agent-chat/agent-chat.component";
 
+interface AgentWorkbenchTab {
+  localId: string;
+  agentInfo: AgentInfo | null;
+}
+
 /**
- * The shared "inside" of every agent panel: a tab strip with a registration tab and
- * one tab per agent, each hosting a {@link AgentChatComponent}. It owns all the
- * agent-list / active-agent bookkeeping so the dock and float panels only have to
- * worry about their own chrome (positioning, collapse, resize).
+ * The shared "inside" of every agent panel. It hosts one chat surface that starts
+ * in a pending state, or loads a requested existing agent by ID.
  *
  * Both {@link AgentDockComponent} (dashboard) and {@link AgentFloatComponent}
  * (workspace) embed this component, so the chat UI is reused in both places.
@@ -45,18 +49,14 @@ import { AgentChatComponent } from "../agent-panel/agent-chat/agent-chat.compone
   templateUrl: "agent-workbench.component.html",
   styleUrls: ["agent-workbench.component.scss"],
   imports: [
-    NgIf,
     NgFor,
+    NgIf,
+    FormsModule,
     NzButtonComponent,
-    NzWaveDirective,
-    ɵNzTransitionPatchDirective,
-    NzTooltipDirective,
     NzIconDirective,
-    NzTabsComponent,
-    NzTabBarExtraContentDirective,
-    NzTabComponent,
-    NzTabDirective,
-    AgentRegistrationComponent,
+    NzInputDirective,
+    NzSpinComponent,
+    NzTooltipDirective,
     AgentChatComponent,
   ],
 })
@@ -67,37 +67,47 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
    */
   @Input() agentIdToActivate?: string;
 
-  // 0 = registration tab, 1+ = agent tabs.
-  selectedTabIndex = 0;
-  agents: AgentInfo[] = [];
   // Only one agent can be connected at a time.
   activeAgentId: string | null = null;
+  currentAgent: AgentInfo | null = null;
+  tabs: AgentWorkbenchTab[] = [];
+  activeTabId: string | null = null;
+  isLoadingAgent = false;
+  editingTabId: string | null = null;
+  editingName = "";
+  private loadingAgentId: string | null = null;
+  private nextPendingIndex = 1;
 
-  constructor(private agentService: AgentService) {}
+  constructor(
+    private agentService: AgentService,
+    private userService: UserService
+  ) {}
 
   ngOnInit(): void {
-    this.agentService.agentChange$.pipe(untilDestroyed(this)).subscribe(() => {
-      this.agentService
-        .getAllAgents()
-        .pipe(untilDestroyed(this))
-        .subscribe(agents => {
-          this.setAgents(agents);
-          this.tryActivateAgentFromInput();
-        });
-    });
+    this.userService
+      .userChanged()
+      .pipe(
+        distinctUntilChanged((previous, current) => previous?.uid === current?.uid),
+        untilDestroyed(this)
+      )
+      .subscribe(user => {
+        this.cancelTabNameEdit();
+        this.deactivateCurrentAgent();
+        this.currentAgent = null;
+        this.activeTabId = null;
+        this.tabs = [];
 
-    this.agentService
-      .getAllAgents()
-      .pipe(untilDestroyed(this))
-      .subscribe(agents => {
-        this.setAgents(agents);
-        this.tryActivateAgentFromInput();
+        if (user) {
+          this.loadPersistedAgents();
+        } else {
+          this.ensurePendingTab();
+        }
       });
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes["agentIdToActivate"] && this.agentIdToActivate) {
-      this.tryActivateAgentFromInput();
+      this.loadAgentFromInput();
     }
   }
 
@@ -106,84 +116,235 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
     this.deactivateCurrentAgent();
   }
 
-  private tryActivateAgentFromInput(): void {
-    if (!this.agentIdToActivate || this.agents.length === 0) {
+  private loadAgentFromInput(): void {
+    const agentId = this.agentIdToActivate;
+    if (!agentId || this.activeAgentId === agentId || this.loadingAgentId === agentId) {
       return;
     }
 
-    const agentIndex = this.agents.findIndex(agent => agent.id === this.agentIdToActivate);
-    if (agentIndex === -1) {
-      return;
-    }
-
-    const agent = this.agents[agentIndex];
-    if (this.activeAgentId) {
-      this.agentService.deactivateAgent(this.activeAgentId);
-    }
-    this.activeAgentId = agent.id;
-    this.agentService.activateAgent(agent.id);
-    this.selectedTabIndex = agentIndex + 1; // +1 because tab 0 is registration
-
-    // Clear so we don't re-activate on every change.
-    this.agentIdToActivate = undefined;
-  }
-
-  private setAgents(agents: AgentInfo[]): void {
-    this.agents = agents;
-
-    if (this.activeAgentId && !agents.some(agent => agent.id === this.activeAgentId)) {
-      this.deactivateCurrentAgent();
-    }
-
-    if (this.selectedTabIndex > agents.length) {
-      this.selectedTabIndex = 0;
-    }
-  }
-
-  /** Activates and switches to a newly created agent. */
-  onAgentCreated(agentId: string): void {
-    if (this.activeAgentId) {
-      this.agentService.deactivateAgent(this.activeAgentId);
-    }
-    this.activeAgentId = agentId;
-    this.agentService.activateAgent(agentId);
-
+    this.isLoadingAgent = true;
+    this.loadingAgentId = agentId;
     this.agentService
-      .getAllAgents()
+      .getAgent(agentId)
       .pipe(untilDestroyed(this))
-      .subscribe(agents => {
-        this.setAgents(agents);
-        const agentIndex = agents.findIndex(agent => agent.id === agentId);
-        if (agentIndex !== -1) {
-          this.selectedTabIndex = agentIndex + 1; // +1 because tab 0 is registration
-        }
+      .subscribe({
+        next: agent => {
+          this.isLoadingAgent = false;
+          this.loadingAgentId = null;
+          this.openAgentTab(agent);
+          this.agentIdToActivate = undefined;
+        },
+        error: (error: unknown) => {
+          this.isLoadingAgent = false;
+          this.loadingAgentId = null;
+          this.currentAgent = null;
+          this.deactivateCurrentAgent();
+          this.ensurePendingTab();
+          console.error("Failed to load agent:", error);
+        },
       });
   }
 
-  onTabSelectChange(index: number): void {
-    if (index === 0) {
-      this.deactivateCurrentAgent();
-      this.selectedTabIndex = 0;
-      return;
-    }
+  private loadPersistedAgents(): void {
+    this.isLoadingAgent = true;
+    this.agentService
+      .getAllAgents()
+      .pipe(untilDestroyed(this))
+      .subscribe({
+        next: agents => {
+          this.isLoadingAgent = false;
+          if (agents.length === 0) {
+            this.tabs = [];
+            this.ensurePendingTab();
+            if (this.agentIdToActivate) {
+              this.loadAgentFromInput();
+            }
+            return;
+          }
 
-    const agentIndex = index - 1;
-    if (agentIndex < 0 || agentIndex >= this.agents.length) {
-      return;
-    }
-    this.switchToAgent(this.agents[agentIndex].id, index);
+          this.tabs = agents.map(agent => ({
+            localId: `agent-${agent.id}`,
+            agentInfo: agent,
+          }));
+
+          const requestedTab = this.agentIdToActivate
+            ? this.tabs.find(tab => tab.agentInfo?.id === this.agentIdToActivate)
+            : undefined;
+
+          if (requestedTab) {
+            this.selectTab(requestedTab.localId);
+            this.agentIdToActivate = undefined;
+          } else if (this.agentIdToActivate) {
+            this.loadAgentFromInput();
+          } else {
+            this.selectTab(this.tabs[0].localId);
+          }
+        },
+        error: (error: unknown) => {
+          this.isLoadingAgent = false;
+          this.tabs = [];
+          this.ensurePendingTab();
+          console.error("Failed to load agents:", error);
+        },
+      });
   }
 
-  private switchToAgent(agentId: string, tabIndex: number): void {
-    if (this.activeAgentId === agentId && this.selectedTabIndex === tabIndex) {
+  addPendingTab(): void {
+    const tab = this.createPendingTab();
+    this.tabs = [...this.tabs, tab];
+    this.selectTab(tab.localId);
+  }
+
+  selectTab(tabId: string): void {
+    const tab = this.tabs.find(candidate => candidate.localId === tabId);
+    if (!tab) {
       return;
     }
-    if (this.activeAgentId !== agentId) {
-      this.deactivateCurrentAgent();
+
+    this.deactivateCurrentAgent();
+    this.activeTabId = tab.localId;
+    this.currentAgent = tab.agentInfo;
+
+    if (tab.agentInfo) {
+      this.activeAgentId = tab.agentInfo.id;
+      this.agentService.activateAgent(tab.agentInfo.id);
     }
-    this.activeAgentId = agentId;
-    this.agentService.activateAgent(agentId);
-    this.selectedTabIndex = tabIndex;
+  }
+
+  onAgentReady(agent: AgentInfo, tabId?: string): void {
+    const tab = this.tabs.find(candidate => candidate.localId === (tabId ?? this.activeTabId));
+    if (!tab) {
+      this.openAgentTab(agent);
+      return;
+    }
+
+    tab.agentInfo = agent;
+    this.tabs = [...this.tabs];
+
+    if (this.activeTabId !== tab.localId) {
+      this.selectTab(tab.localId);
+      return;
+    }
+
+    this.deactivateCurrentAgent();
+    this.currentAgent = agent;
+    this.activeAgentId = agent.id;
+    this.agentService.activateAgent(agent.id);
+  }
+
+  onAgentUpdated(agent: AgentInfo, tabId?: string): void {
+    const tab = this.tabs.find(candidate => candidate.localId === (tabId ?? this.activeTabId));
+    if (!tab) {
+      return;
+    }
+
+    tab.agentInfo = agent;
+    this.tabs = [...this.tabs];
+    if (this.activeTabId === tab.localId) {
+      this.currentAgent = agent;
+      this.activeAgentId = agent.id;
+    }
+  }
+
+  startTabNameEdit(tab: AgentWorkbenchTab, event: MouseEvent): void {
+    event.stopPropagation();
+    if (!tab.agentInfo) {
+      return;
+    }
+    this.editingTabId = tab.localId;
+    this.editingName = tab.agentInfo.name;
+  }
+
+  saveTabName(tab: AgentWorkbenchTab): void {
+    if (this.editingTabId !== tab.localId) {
+      return;
+    }
+
+    const agent = tab.agentInfo;
+    const nextName = this.editingName.trim();
+    this.editingTabId = null;
+
+    if (!agent || !nextName || nextName === agent.name) {
+      return;
+    }
+
+    this.agentService
+      .updateAgent(agent.id, { name: nextName })
+      .pipe(untilDestroyed(this))
+      .subscribe({
+        next: updatedAgent => this.onAgentUpdated(updatedAgent, tab.localId),
+        error: (error: unknown) => {
+          console.error("Failed to rename agent:", error);
+        },
+      });
+  }
+
+  cancelTabNameEdit(event?: Event): void {
+    event?.stopPropagation();
+    this.editingTabId = null;
+    this.editingName = "";
+  }
+
+  deleteTabAgent(tab: AgentWorkbenchTab, event: Event): void {
+    if (!tab.agentInfo) {
+      event.stopPropagation();
+      return;
+    }
+    this.deleteAgent(tab.agentInfo.id, event);
+  }
+
+  getTabLabel(tab: AgentWorkbenchTab, index: number): string {
+    return tab.agentInfo?.name ?? `New chat ${index + 1}`;
+  }
+
+  isActiveAgentTab(tab: AgentWorkbenchTab): boolean {
+    return this.activeTabId === tab.localId && !!tab.agentInfo;
+  }
+
+  trackByTabId(_index: number, tab: AgentWorkbenchTab): string {
+    return tab.localId;
+  }
+
+  private ensurePendingTab(): void {
+    if (this.tabs.length > 0) {
+      return;
+    }
+
+    const tab = this.createPendingTab();
+    this.tabs = [tab];
+    this.activeTabId = tab.localId;
+  }
+
+  private createPendingTab(): AgentWorkbenchTab {
+    return {
+      localId: `pending-${this.nextPendingIndex++}`,
+      agentInfo: null,
+    };
+  }
+
+  private openAgentTab(agent: AgentInfo): void {
+    const existingTab = this.tabs.find(tab => tab.agentInfo?.id === agent.id);
+    if (existingTab) {
+      existingTab.agentInfo = agent;
+      this.tabs = [...this.tabs];
+      this.selectTab(existingTab.localId);
+      return;
+    }
+
+    const reusablePendingTab =
+      this.tabs.length === 1 && !this.tabs[0].agentInfo ? this.tabs[0] : this.tabs.find(tab => !tab.agentInfo);
+    const targetTab = reusablePendingTab ?? {
+      localId: `agent-${agent.id}`,
+      agentInfo: null,
+    };
+
+    targetTab.agentInfo = agent;
+    if (!reusablePendingTab) {
+      this.tabs = [...this.tabs, targetTab];
+    } else {
+      this.tabs = [...this.tabs];
+    }
+    this.selectTab(targetTab.localId);
   }
 
   private deactivateCurrentAgent(): void {
@@ -200,7 +361,6 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
       return;
     }
 
-    const agentIndex = this.agents.findIndex(agent => agent.id === agentId);
     if (this.activeAgentId === agentId) {
       this.deactivateCurrentAgent();
     }
@@ -210,10 +370,18 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
       .pipe(untilDestroyed(this))
       .subscribe({
         next: () => {
-          if (agentIndex !== -1 && this.selectedTabIndex === agentIndex + 1) {
-            this.selectedTabIndex = 0;
-          } else if (this.selectedTabIndex > agentIndex + 1) {
-            this.selectedTabIndex--;
+          const deletedIndex = this.tabs.findIndex(tab => tab.agentInfo?.id === agentId);
+          if (deletedIndex >= 0) {
+            this.tabs = this.tabs.filter((_, index) => index !== deletedIndex);
+          }
+
+          if (this.tabs.length === 0) {
+            this.ensurePendingTab();
+          }
+
+          if (this.currentAgent?.id === agentId || this.activeTabId === null) {
+            const nextTab = this.tabs[Math.min(deletedIndex, this.tabs.length - 1)];
+            this.selectTab(nextTab.localId);
           }
         },
         error: (error: unknown) => {
