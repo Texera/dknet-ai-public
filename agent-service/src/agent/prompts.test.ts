@@ -22,6 +22,26 @@ import { buildSystemPrompt } from "./prompts";
 import { WorkflowSystemMetadata } from "./util/workflow-system-metadata";
 
 describe("buildSystemPrompt", () => {
+  test("frames the assistant around DKNet-AI and includes the platform overview", () => {
+    const prompt = buildSystemPrompt(new WorkflowSystemMetadata());
+    const normalizedPrompt = prompt.toLowerCase();
+
+    expect(prompt).toContain("You are DKNetAgent, the DKNet-AI assistant for dknet-ai.org");
+    expect(prompt).toContain("Use DKNet-AI as the primary platform name");
+    expect(prompt).toContain("Apache Texera is the underlying workflow/dataflow engine");
+    expect(normalizedPrompt).toContain("on-demand computing resources");
+    expect(normalizedPrompt).toContain("single-cell rna sequencing analysis");
+    expect(prompt).toContain("CloudBioMapper");
+    expect(prompt).toContain("## Platform Concepts and Data Analysis Workflow");
+    expect(prompt).toContain("Click the Datasets tab");
+    expect(prompt).toContain("Click Create Workflow");
+    expect(prompt).toContain("operator menu");
+    expect(normalizedPrompt).toContain("computing units");
+    expect(normalizedPrompt).toContain("runtime environments");
+    expect(prompt).toContain("READ or WRITE access");
+    expect(prompt).not.toContain("You are a Texera Copilot");
+  });
+
   test("instructs the agent to discover operator schemas with tools instead of embedding every schema", () => {
     const store = new WorkflowSystemMetadata();
     store.loadFromMetadata({

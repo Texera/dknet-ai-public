@@ -115,19 +115,18 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
   public isUpdatingModel = false;
   public readonly suggestedQuestions: SuggestedQuestion[] = [
     {
-      title: "Introduce Texera",
-      prompt: "Please introduce this platform to me.",
+      title: "Introduce dknet-ai.org",
+      prompt: "Please briefly introduce what I can do on dknet-ai.org.",
       icon: "compass",
     },
     {
       title: "Bio-MCP PubMed Search",
-      prompt:
-        "Search on PubMed for recent single-cell RNA-seq studies about Alzheimer's disease biomarkers and summarize useful datasets.",
+      prompt: "Search PubMed for recent single-cell RNA-seq studies about Alzheimer's disease biomarkers.",
       icon: "experiment",
     },
     {
-      title: "Data Analysis Guide",
-      prompt: "How do I do data analysis on this platform?",
+      title: "Start Your Data Analysis",
+      prompt: "Please tell me what data I can analyze and how I can do data analysis here.",
       icon: "bar-chart",
     },
   ];

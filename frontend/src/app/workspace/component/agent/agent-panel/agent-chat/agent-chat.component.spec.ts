@@ -189,9 +189,9 @@ describe("AgentChatComponent", () => {
 
     expect(component.suggestedQuestions).toHaveLength(3);
     expect(component.suggestedQuestions.map(question => question.title)).toEqual([
-      "Introduce Texera",
+      "Introduce dknet-ai.org",
       "Bio-MCP PubMed Search",
-      "Data Analysis Guide",
+      "Start Your Data Analysis",
     ]);
 
     component.sendSuggestedQuestion(component.suggestedQuestions[1].prompt);

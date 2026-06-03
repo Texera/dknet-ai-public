@@ -208,7 +208,7 @@ export function createListDatasetVersionsTool(getConfig: () => DatasetToolConfig
 export function createListDatasetFilesTool(getConfig: () => DatasetToolConfig) {
   return tool({
     description:
-      "List full file paths under a dataset version. The paths use Texera's dataset path format: /ownerEmail/datasetName/versionName/fileRelativePath. If dvid is omitted, the latest dataset version is used.",
+      "List full file paths under a dataset version. The paths use DKNet-AI's dataset path format: /ownerEmail/datasetName/versionName/fileRelativePath. If dvid is omitted, the latest dataset version is used.",
     inputSchema: z.object({
       did: z.number().int().positive().describe("Dataset id."),
       dvid: z.number().int().positive().optional().describe("Dataset version id. Omit to use the latest version."),
