@@ -52,10 +52,17 @@
         [class.selected]="selectedModelType === modelType.id"
         (click)="selectModelType(modelType.id)">
         <div class="model-icon">
-          <i
-            nz-icon
-            [nzType]="modelType.icon"
-            nzTheme="outline"></i>
+          <img
+            *ngIf="getModelIconSrc(modelType) as iconSrc; else defaultModelIcon"
+            [src]="iconSrc"
+            [alt]="modelType.name + ' icon'"
+            class="model-icon-img" />
+          <ng-template #defaultModelIcon>
+            <i
+              nz-icon
+              nzType="robot"
+              nzTheme="outline"></i>
+          </ng-template>
         </div>
         <div class="model-info">
           <h5>{{ modelType.name }}</h5>

@@ -99,6 +99,24 @@ export class AgentRegistrationComponent implements OnInit, OnDestroy {
     this.selectedModelType = modelTypeId;
   }
 
+  /**
+   * Brand icon for a model. Claude- and GPT-prefixed models get their brand image;
+   * every other model falls back to the default robot icon (handled in the template).
+   * Returns null when there is no brand image so the template shows the robot.
+   */
+  public getModelIconSrc(modelType: ModelType): string | null {
+    const id = (modelType.id ?? "").toLowerCase();
+    // Tolerate provider-prefixed ids like "anthropic/claude-..." or "openai/gpt-...".
+    const base = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;
+    if (base.startsWith("claude")) {
+      return "assets/svg/claude.png";
+    }
+    if (base.startsWith("gpt")) {
+      return "assets/svg/gpt.png";
+    }
+    return null;
+  }
+
   public createAgent(): void {
     if (!this.selectedModelType || this.isCreating) {
       return;
