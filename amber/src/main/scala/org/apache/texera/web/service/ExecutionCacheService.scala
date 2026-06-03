@@ -42,7 +42,7 @@ import org.apache.texera.web.storage.{ExecutionCacheEntryUpdateStore, ExecutionS
   */
 class ExecutionCacheService(
     client: AmberClient,
-    cacheService: OperatorPortCacheService,
+    cacheService: OperatorPortCache,
     workflowContext: WorkflowContext,
     physicalPlan: PhysicalPlan,
     executionStateStore: ExecutionStateStore
