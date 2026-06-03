@@ -28,61 +28,33 @@ import type { ReActStep } from "../../types/agent";
 import type { WorkflowCompilationResponse, WorkflowFatalError } from "../../api/compile-api";
 import { extractOperatorInputPortSchemaMap } from "./workflow-utils";
 import { createLogger } from "../../logger";
+import { limitResolvedText } from "../tools/tools-utility";
 
 const log = createLogger("ContextAssembler");
+
+export interface AssembleContextOptions {
+  useRedact?: boolean;
+  compilationResult?: WorkflowCompilationResponse | null;
+  includeWorkflowContext?: boolean;
+  maxResolvedCharLimit?: number;
+}
 
 export function assembleContext(
   visibleSteps: ReActStep[],
   workflowState: WorkflowState,
   operatorExecutionResults: Map<string, string>,
-  useRedact: boolean = false,
-  compilationResult?: WorkflowCompilationResponse | null
+  options: AssembleContextOptions = {}
 ): ModelMessage[] {
-  const messageIds: string[] = [];
-  const stepsByMessage = new Map<string, ReActStep[]>();
-  for (const step of visibleSteps) {
-    let group = stepsByMessage.get(step.messageId);
-    if (!group) {
-      group = [];
-      stepsByMessage.set(step.messageId, group);
-      messageIds.push(step.messageId);
-    }
-    group.push(step);
-  }
-
+  const { useRedact = false, compilationResult, includeWorkflowContext = false, maxResolvedCharLimit } = options;
   const sections: string[] = [];
-  let completedCount = 0;
-  let hasOngoing = false;
+  sections.push(serializeEvents(visibleSteps, maxResolvedCharLimit));
 
-  for (const msgId of messageIds) {
-    const steps = stepsByMessage.get(msgId)!;
-    // A task is completed only when an *agent* step has isEnd=true; user steps
-    // always have isEnd=true because they are single-step messages.
-    const isCompleted = steps.some(s => s.role === "agent" && s.isEnd);
-
-    if (isCompleted) {
-      if (completedCount === 0) {
-        sections.push("# Completed Tasks");
-      }
-      sections.push("");
-      sections.push(serializeTask(steps, "completed"));
-      completedCount++;
-    } else {
-      hasOngoing = true;
-      sections.push("");
-      sections.push("# Ongoing Task");
-      sections.push(serializeTask(steps, "ongoing"));
-      sections.push("");
-      sections.push(
-        "Above is user's request and the steps you already took. You as an assistant please keep working on solving user's request based on the progress of current workflow."
-      );
-    }
-  }
-
-  const dagSection = serializeDag(workflowState, operatorExecutionResults, useRedact, compilationResult);
-  if (dagSection) {
+  const dagSection = includeWorkflowContext
+    ? serializeDag(workflowState, operatorExecutionResults, useRedact, compilationResult, maxResolvedCharLimit)
+    : null;
+  if (includeWorkflowContext && dagSection) {
     sections.push("");
-    sections.push("# Current Dataflow");
+    sections.push("# Current Workflow");
     sections.push(dagSection);
   }
 
@@ -90,8 +62,8 @@ export function assembleContext(
 
   log.debug(
     {
-      completed: completedCount,
-      ongoing: hasOngoing ? 1 : 0,
+      events: visibleSteps.length,
+      includeWorkflowContext,
       operatorResults: operatorExecutionResults.size,
       useRedact,
     },
@@ -101,45 +73,114 @@ export function assembleContext(
   return [{ role: "user", content }];
 }
 
-function serializeTask(steps: ReActStep[], status: "completed" | "ongoing"): string {
+function serializeEvents(steps: ReActStep[], maxResolvedCharLimit?: number): string {
   const lines: string[] = [];
-  lines.push(`## Task (${status})`);
-  lines.push("");
+  lines.push("# Event Context");
 
-  const userStep = steps.find(s => s.role === "user");
-  const assistantSteps = steps.filter(s => s.role === "agent");
-
-  if (userStep) {
-    lines.push("### User request");
+  if (steps.length === 0) {
     lines.push("");
-    lines.push(userStep.content);
-    lines.push("");
+    lines.push("(no prior events)");
+    return lines.join("\n");
   }
 
-  for (const step of assistantSteps) {
-    lines.push(`### Turn ${step.stepId}`);
-    if (step.content) {
-      lines.push(`Thought: ${step.content}`);
-    }
-    if (step.toolCalls && step.toolCalls.length > 0) {
-      for (let i = 0; i < step.toolCalls.length; i++) {
-        const tc = step.toolCalls[i];
-        const tr = step.toolResults?.[i];
-        const statusAttr = tr?.isError ? "failed" : "succeeded";
-        lines.push(`- ${tc.toolName} (${statusAttr})`);
-      }
-    }
+  for (let i = 0; i < steps.length; i++) {
     lines.push("");
+    lines.push(serializeEvent(steps[i], i + 1, maxResolvedCharLimit));
   }
 
   return lines.join("\n").trimEnd();
+}
+
+function serializeEvent(step: ReActStep, eventNumber: number, maxResolvedCharLimit?: number): string {
+  const eventType = getEventType(step);
+  const lines: string[] = [];
+  lines.push(`## Event ${eventNumber}: ${eventType}`);
+
+  if (step.role === "user") {
+    lines.push("Content:");
+    appendBlock(lines, step.content || "(empty)");
+    return lines.join("\n");
+  }
+
+  lines.push("Thought:");
+  appendBlock(lines, step.content || "(empty)");
+
+  const toolCalls = step.toolCalls ?? [];
+  const toolResults = step.toolResults ?? [];
+  if (toolCalls.length === 0) {
+    lines.push("Actions: (none)");
+  } else {
+    const resultsByCallId = new Map(toolResults.map(result => [result.toolCallId, result]));
+    for (let i = 0; i < toolCalls.length; i++) {
+      const toolCall = toolCalls[i];
+      const toolResult = resultsByCallId.get(toolCall.toolCallId) ?? toolResults[i];
+      lines.push("");
+      lines.push(`### Tool Call ${i + 1}`);
+      lines.push(`Action: ${toolCall.toolName}`);
+      lines.push("Parameters:");
+      appendBlock(lines, serializeValue(toolCall.input));
+      if (toolResult) {
+        lines.push(`Result Status: ${toolResult.isError ? "failed" : "succeeded"}`);
+        lines.push("Result:");
+        appendBlock(lines, serializeToolResult(toolResult.output, maxResolvedCharLimit));
+      } else {
+        lines.push("Result Status: missing");
+        lines.push("Result:");
+        appendBlock(lines, "(missing)");
+      }
+    }
+  }
+
+  const matchedToolCallIds = new Set(toolCalls.map(call => call.toolCallId));
+  const unmatchedResults = toolResults.filter(result => !matchedToolCallIds.has(result.toolCallId));
+  for (const result of unmatchedResults) {
+    lines.push("");
+    lines.push("### Tool Result Without Matching Call");
+    lines.push(`Result Status: ${result.isError ? "failed" : "succeeded"}`);
+    lines.push("Result:");
+    appendBlock(lines, serializeToolResult(result.output, maxResolvedCharLimit));
+  }
+
+  return lines.join("\n");
+}
+
+function getEventType(step: ReActStep): "user_task" | "user_event" | "agent_event" {
+  if (step.role === "agent") {
+    return "agent_event";
+  }
+  return step.messageSource === "feedback" ? "user_event" : "user_task";
+}
+
+function appendBlock(lines: string[], content: string): void {
+  const value = content.length > 0 ? content : "(empty)";
+  for (const line of value.split("\n")) {
+    lines.push(`  ${line}`);
+  }
+}
+
+function serializeToolResult(output: unknown, maxResolvedCharLimit?: number): string {
+  return limitResolvedText(serializeValue(output), maxResolvedCharLimit);
+}
+
+function serializeValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    const serialized = JSON.stringify(value, null, 2);
+    if (serialized !== undefined) {
+      return serialized;
+    }
+  } catch {}
+  return String(value);
 }
 
 function serializeDag(
   workflowState: WorkflowState,
   operatorExecutionResults: Map<string, string>,
   useRedact: boolean,
-  compilationResult?: WorkflowCompilationResponse | null
+  compilationResult?: WorkflowCompilationResponse | null,
+  maxResolvedCharLimit?: number
 ): string | null {
   const allOperators = workflowState.getAllOperators();
   if (allOperators.length === 0) return null;
@@ -192,7 +233,8 @@ function serializeDag(
         useRedact,
         inputSchemaMap,
         outputSchemaMap,
-        compilationError
+        compilationError,
+        maxResolvedCharLimit
       )
     );
     lines.push("");
@@ -221,7 +263,8 @@ function serializeOperator(
   useRedact: boolean,
   inputSchemaMap?: OperatorPortSchemaMap,
   outputSchemaMap?: OperatorPortSchemaMap,
-  compilationError?: WorkflowFatalError
+  compilationError?: WorkflowFatalError,
+  maxResolvedCharLimit?: number
 ): string {
   const hasError = execResult !== undefined && execResult.includes("[ERROR]");
   const status = execResult ? (hasError ? "failed" : "executed") : "not-executed";
@@ -267,7 +310,7 @@ function serializeOperator(
 
   if (execResult) {
     lines.push("Result:");
-    const indented = execResult
+    const indented = limitResolvedText(execResult, maxResolvedCharLimit)
       .split("\n")
       .map(l => "  " + l)
       .join("\n");
