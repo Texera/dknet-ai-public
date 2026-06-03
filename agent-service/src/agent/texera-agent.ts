@@ -278,7 +278,16 @@ export class TexeraAgent {
   }
 
   private buildExecutionConfig(): ExecutionConfig | undefined {
-    if (!this.currentTaskContext || this.currentTaskContext.workflowId === undefined) return undefined;
+    // Executing requires both a workflow and a connected computing unit. Without a computing unit
+    // there is nothing to run on, so no execution config is produced (the execute tool and the
+    // post-step auto-execution are skipped, and the model guides the user to connect one instead).
+    if (
+      !this.currentTaskContext ||
+      this.currentTaskContext.workflowId === undefined ||
+      this.currentTaskContext.computingUnitId === undefined
+    ) {
+      return undefined;
+    }
     return {
       userToken: this.currentTaskContext.userToken,
       workflowId: this.currentTaskContext.workflowId,
@@ -307,7 +316,9 @@ export class TexeraAgent {
     }
 
     const getExecutionConfig =
-      this.currentTaskContext?.workflowId !== undefined ? () => this.buildExecutionConfig()! : undefined;
+      this.currentTaskContext?.workflowId !== undefined && this.currentTaskContext?.computingUnitId !== undefined
+        ? () => this.buildExecutionConfig()!
+        : undefined;
     const getDatasetToolConfig = this.currentTaskContext ? () => this.buildDatasetToolConfig()! : undefined;
 
     const context: ToolContext = {
@@ -657,6 +668,7 @@ export class TexeraAgent {
             compilationResult,
             includeWorkflowContext,
             maxResolvedCharLimit: this.settings.maxOperatorResultCharLimit,
+            computingUnitConnected: taskContext.computingUnitId !== undefined,
           });
           lastPreparedMessages = processed;
           return { messages: processed };

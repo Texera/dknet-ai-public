@@ -37,6 +37,8 @@ export interface AssembleContextOptions {
   compilationResult?: WorkflowCompilationResponse | null;
   includeWorkflowContext?: boolean;
   maxResolvedCharLimit?: number;
+  /** Whether a computing unit is connected; surfaced so the model can guide the user to connect one. */
+  computingUnitConnected?: boolean;
 }
 
 export function assembleContext(
@@ -45,7 +47,13 @@ export function assembleContext(
   operatorExecutionResults: Map<string, string>,
   options: AssembleContextOptions = {}
 ): ModelMessage[] {
-  const { useRedact = false, compilationResult, includeWorkflowContext = false, maxResolvedCharLimit } = options;
+  const {
+    useRedact = false,
+    compilationResult,
+    includeWorkflowContext = false,
+    maxResolvedCharLimit,
+    computingUnitConnected = false,
+  } = options;
   const sections: string[] = [];
   sections.push(serializeEvents(visibleSteps, maxResolvedCharLimit));
 
@@ -61,6 +69,11 @@ export function assembleContext(
     );
     sections.push("");
     sections.push("# Current Workflow");
+    sections.push(
+      computingUnitConnected
+        ? "Computing unit: connected — operators can be executed."
+        : "Computing unit: not connected — to execute the workflow, the user must connect a computing unit from the top menu bar."
+    );
     sections.push(dagSection ?? "(empty — no operators have been added to the workflow yet)");
   }
 

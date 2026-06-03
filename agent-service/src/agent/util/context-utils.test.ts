@@ -198,4 +198,29 @@ describe("assembleContext workflow section", () => {
     expect(content).toContain("# Current Workflow");
     expect(content).toContain("(empty");
   });
+
+  test("flags when no computing unit is connected and points to the top menu bar", () => {
+    const workflowState = new WorkflowState();
+    workflowState.addOperator(makeOperator("scan-1"));
+
+    const content = getContextContent([makeUserStep()], workflowState, new Map(), {
+      includeWorkflowContext: true,
+      computingUnitConnected: false,
+    });
+
+    expect(content).toContain("Computing unit: not connected");
+    expect(content).toContain("top menu bar");
+  });
+
+  test("flags when a computing unit is connected", () => {
+    const workflowState = new WorkflowState();
+    workflowState.addOperator(makeOperator("scan-1"));
+
+    const content = getContextContent([makeUserStep()], workflowState, new Map(), {
+      includeWorkflowContext: true,
+      computingUnitConnected: true,
+    });
+
+    expect(content).toContain("Computing unit: connected");
+  });
 });

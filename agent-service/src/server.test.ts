@@ -209,6 +209,21 @@ describe(`POST ${API}/agents`, () => {
     expect(toolNames).not.toContain("executeOperator");
   });
 
+  test("executeOperator tool requires a connected computing unit", async () => {
+    const createRes = await postJson(`${API}/agents`, { modelType: "m" });
+    expect(createRes.status).toBe(200);
+    const created = await readJson<{ id: string }>(createRes);
+    const agent = _getAgentForTests(created.id)!;
+
+    // Workflow present but no computing unit -> cannot execute, tool withheld.
+    await applyAgentRequestContext(created.id, agent, { userToken: tokenFor(1), workflowId: 5 });
+    expect(agent.getSystemInfo().tools.map(tool => tool.name)).not.toContain("executeOperator");
+
+    // With a computing unit connected, the execute tool is exposed.
+    await applyAgentRequestContext(created.id, agent, { userToken: tokenFor(1), workflowId: 5, computingUnitId: 3 });
+    expect(agent.getSystemInfo().tools.map(tool => tool.name)).toContain("executeOperator");
+  });
+
   test("does not expose settings in agent API responses", async () => {
     const created = await readJson<{ id: string; settings?: unknown }>(
       await postJson(`${API}/agents`, { modelType: "m", name: "public" })
