@@ -47,6 +47,7 @@ import { UserService } from "../../../common/service/user/user.service";
 import { AgentState, ReActStep, ModelMessage } from "./agent-types";
 import { Workflow, WorkflowContent } from "../../../common/type/workflow";
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
+import { WorkflowActionService } from "../workflow-graph/model/workflow-action.service";
 
 /**
  * Agent information for tracking created agents (API version).
@@ -182,6 +183,8 @@ interface AgentStateTracking {
 interface AgentRequestContext {
   userToken: string;
   workflowId?: number;
+  workflowName?: string;
+  workflowContent?: WorkflowContent;
   computingUnitId?: number;
 }
 
@@ -232,6 +235,7 @@ export class AgentService {
     private workflowPersistService: WorkflowPersistService,
     private ngZone: NgZone,
     private computingUnitStatusService: ComputingUnitStatusService,
+    private workflowActionService: WorkflowActionService,
     private userService: UserService
   ) {
     // Agent visibility is scoped by the current user's JWT. Any user change
@@ -265,15 +269,6 @@ export class AgentService {
     return { headers };
   }
 
-  private getCurrentWorkflowId(): number | undefined {
-    const match = window.location.pathname.match(/^\/dashboard\/user\/workflow\/(\d+)(?:\/)?$/);
-    if (!match) {
-      return undefined;
-    }
-    const workflowId = Number(match[1]);
-    return Number.isFinite(workflowId) && workflowId > 0 ? workflowId : undefined;
-  }
-
   private buildRequestContext(): AgentRequestContext | undefined {
     const userToken = AuthService.getAccessToken();
     if (!userToken) {
@@ -282,10 +277,15 @@ export class AgentService {
     }
 
     const context: AgentRequestContext = { userToken };
-    const workflowId = this.getCurrentWorkflowId();
-    if (workflowId !== undefined) {
+    const workflowMetadata = this.workflowActionService.getWorkflowMetadata();
+    const workflowId = workflowMetadata?.wid;
+    if (workflowId !== undefined && workflowId > 0) {
       context.workflowId = workflowId;
     }
+    if (workflowMetadata?.name) {
+      context.workflowName = workflowMetadata.name;
+    }
+    context.workflowContent = this.workflowActionService.getWorkflowContent();
 
     const selectedUnit = this.computingUnitStatusService.getSelectedComputingUnitValue();
     if (selectedUnit) {

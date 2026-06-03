@@ -49,13 +49,19 @@ export function assembleContext(
   const sections: string[] = [];
   sections.push(serializeEvents(visibleSteps, maxResolvedCharLimit));
 
-  const dagSection = includeWorkflowContext
-    ? serializeDag(workflowState, operatorExecutionResults, useRedact, compilationResult, maxResolvedCharLimit)
-    : null;
-  if (includeWorkflowContext && dagSection) {
+  // When the user is in a workflow workspace the section is always present, so the model can
+  // tell "empty workflow" apart from "no workflow context"; an empty DAG renders as "(empty)".
+  if (includeWorkflowContext) {
+    const dagSection = serializeDag(
+      workflowState,
+      operatorExecutionResults,
+      useRedact,
+      compilationResult,
+      maxResolvedCharLimit
+    );
     sections.push("");
     sections.push("# Current Workflow");
-    sections.push(dagSection);
+    sections.push(dagSection ?? "(empty — no operators have been added to the workflow yet)");
   }
 
   const content = sections.join("\n");
@@ -279,7 +285,7 @@ function serializeOperator(
   if (inputSchemaMap) {
     for (const [portId, schema] of Object.entries(inputSchemaMap)) {
       if (schema) {
-        lines.push(`Input Schema (port ${parsePortIndex(portId)}): ${formatSchema(schema)}`);
+        lines.push(`Input Table Schema (port ${parsePortIndex(portId)}): ${formatSchema(schema)}`);
       }
     }
   }
@@ -300,7 +306,7 @@ function serializeOperator(
   if (outputSchemaMap) {
     const firstSchema = Object.values(outputSchemaMap).find(s => s !== undefined);
     if (firstSchema) {
-      lines.push(`Output Schema: ${formatSchema(firstSchema)}`);
+      lines.push(`Output Table Schema: ${formatSchema(firstSchema)}`);
     }
   }
 

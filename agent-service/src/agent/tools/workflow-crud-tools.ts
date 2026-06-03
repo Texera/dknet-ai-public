@@ -60,7 +60,7 @@ export function createAddOperatorTool(
   const workflowUtil = context?.metadataStore ? new WorkflowUtilService(context.metadataStore, workflowState) : null;
 
   return tool({
-    description: `Add a new operator to the workflow. Use list_operator_types to find valid operator types, then get_operator_schema to understand required properties before setting them.
+    description: `Add a new operator to the workflow. Use list_operator_types to find valid operator types, then get_operator_definition to understand required properties before setting them.
 
 Examples:
 1. Add a source operator (no inputs):
@@ -201,7 +201,7 @@ Examples:
 
 export function createModifyOperatorTool(workflowState: WorkflowState, context?: ToolContext) {
   return tool({
-    description: `Modify an existing operator's properties, input links, or both. Use get_operator_schema first when changing properties so updates match the operator's trimmed schema.
+    description: `Modify an existing operator's properties, input links, or both. Use get_operator_definition first when changing properties so updates match the operator's definition.
 
 Examples:
 1. Modify properties only:

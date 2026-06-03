@@ -19,7 +19,7 @@
 
 import { HttpClientTestingModule, HttpTestingController } from "@angular/common/http/testing";
 import { TestBed } from "@angular/core/testing";
-import { firstValueFrom, of } from "rxjs";
+import { BehaviorSubject, firstValueFrom, of, Subject } from "rxjs";
 import { AuthService, TOKEN_KEY } from "../../../common/service/user/auth.service";
 import { NotificationService } from "../../../common/service/notification/notification.service";
 import { UserService } from "../../../common/service/user/user.service";
@@ -28,12 +28,29 @@ import { WorkflowPersistService } from "../../../common/service/workflow-persist
 import { ComputingUnitStatusService } from "../../../common/service/computing-unit/computing-unit-status/computing-unit-status.service";
 import { AgentService } from "./agent.service";
 import { AgentState } from "./agent-types";
+import { WorkflowActionService } from "../workflow-graph/model/workflow-action.service";
+import { ExecutionMode, WorkflowContent } from "../../../common/type/workflow";
 
 describe("AgentService", () => {
   let service: AgentService;
   let http: HttpTestingController;
   let userService: StubUserService;
   let computingUnitStatusService: { getSelectedComputingUnitValue: ReturnType<typeof vi.fn> };
+  let workflowActionService: {
+    getWorkflowMetadata: ReturnType<typeof vi.fn>;
+    getWorkflowContent: ReturnType<typeof vi.fn>;
+  };
+
+  const workflowContent: WorkflowContent = {
+    operators: [],
+    operatorPositions: {},
+    links: [],
+    commentBoxes: [],
+    settings: {
+      dataTransferBatchSize: 400,
+      executionMode: ExecutionMode.PIPELINED,
+    },
+  };
 
   function putCachedAgent(id = "stale-agent"): void {
     (service as any).agents.set(id, {
@@ -62,6 +79,10 @@ describe("AgentService", () => {
     computingUnitStatusService = {
       getSelectedComputingUnitValue: vi.fn(() => undefined),
     };
+    workflowActionService = {
+      getWorkflowMetadata: vi.fn(() => ({ wid: undefined })),
+      getWorkflowContent: vi.fn(() => workflowContent),
+    };
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
       providers: [
@@ -83,6 +104,10 @@ describe("AgentService", () => {
         {
           provide: ComputingUnitStatusService,
           useValue: computingUnitStatusService,
+        },
+        {
+          provide: WorkflowActionService,
+          useValue: workflowActionService,
         },
       ],
     });
@@ -144,9 +169,10 @@ describe("AgentService", () => {
     subscription.unsubscribe();
   });
 
-  it("builds agent request context from the workspace route, selected computing unit, and JWT", () => {
+  it("builds agent request context from workflow metadata, selected computing unit, and JWT", () => {
     AuthService.setAccessToken("valid-user-token");
-    window.history.pushState({}, "", "/dashboard/user/workflow/123");
+    window.history.pushState({}, "", "/definitely/not/the/workflow/id/999");
+    workflowActionService.getWorkflowMetadata.mockReturnValue({ wid: 123, name: "Workflow 123" });
     computingUnitStatusService.getSelectedComputingUnitValue.mockReturnValue({
       computingUnit: { cuid: 456 },
     });
@@ -154,7 +180,61 @@ describe("AgentService", () => {
     expect((service as any).buildRequestContext()).toEqual({
       userToken: "valid-user-token",
       workflowId: 123,
+      workflowName: "Workflow 123",
+      workflowContent,
       computingUnitId: 456,
+    });
+  });
+
+  it("sends workflow and computing unit ids in the websocket message context", () => {
+    AuthService.setAccessToken("valid-user-token");
+    window.history.pushState({}, "", "/definitely/not/the/workflow/id/999");
+    workflowActionService.getWorkflowMetadata.mockReturnValue({ wid: 123, name: "Workflow 123" });
+    computingUnitStatusService.getSelectedComputingUnitValue.mockReturnValue({
+      computingUnit: { cuid: 456 },
+    });
+
+    const send = vi.fn();
+    (service as any).agents.set("agent-1", {
+      id: "agent-1",
+      name: "Agent 1",
+      modelType: "m",
+      isBaselineMode: false,
+      createdAt: new Date(),
+      state: AgentState.AVAILABLE,
+    });
+    (service as any).agentStateTracking.set("agent-1", {
+      stateSubject: new BehaviorSubject<AgentState>(AgentState.AVAILABLE),
+      reActStepsSubject: new BehaviorSubject([]),
+      hoveredMessageSubject: new BehaviorSubject({
+        viewedOperatorIds: [],
+        addedOperatorIds: [],
+        modifiedOperatorIds: [],
+      }),
+      headIdSubject: new BehaviorSubject(null),
+      workflowSubject: new BehaviorSubject(null),
+      workflowEditSubject: new Subject(),
+      initializingSubject: new BehaviorSubject(false),
+      stopPolling$: new Subject(),
+      wsWorkflowActive: false,
+      websocket: { readyState: WebSocket.OPEN, send },
+      isActive: true,
+    });
+
+    service.sendMessage("agent-1", "inspect the workflow");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0][0])).toMatchObject({
+      type: "message",
+      content: "inspect the workflow",
+      messageSource: "chat",
+      context: {
+        userToken: "valid-user-token",
+        workflowId: 123,
+        workflowName: "Workflow 123",
+        workflowContent,
+        computingUnitId: 456,
+      },
     });
   });
 });

@@ -86,6 +86,7 @@ describe("dataset tools", () => {
     expect(text).toContain(
       "did=2, name=public_census, owner=bob@example.com, visibility=public, access=READ, ownership=shared"
     );
+    expect(text).not.toContain("size=");
   });
 
   test("returns a clear message for an empty dataset list", () => {

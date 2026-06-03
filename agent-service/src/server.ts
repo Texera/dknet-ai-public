@@ -30,6 +30,7 @@ import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
 import { env } from "./config/env";
 import { createLogger } from "./logger";
 import { DEFAULT_AGENT_NAME } from "./types/agent";
+import type { WorkflowContent } from "./types/workflow";
 
 const log = createLogger("Server");
 const wsLog = createLogger("WS");
@@ -176,6 +177,7 @@ export interface AgentRequestContext {
   userToken?: string;
   workflowId?: number;
   workflowName?: string;
+  workflowContent?: WorkflowContent;
   computingUnitId?: number;
 }
 
@@ -198,6 +200,7 @@ export async function applyAgentRequestContext(
     userInfo: extractUserFromToken(userToken),
     workflowId: context.workflowId,
     workflowName: context.workflowName,
+    workflowContent: context.workflowContent,
     computingUnitId: context.computingUnitId,
   };
   agent.setTaskContext(taskContext);
@@ -438,6 +441,7 @@ interface WsMessage {
   userToken?: string;
   workflowId?: number;
   workflowName?: string;
+  workflowContent?: WorkflowContent;
   computingUnitId?: number;
 }
 
@@ -487,6 +491,7 @@ async function buildTaskContext(
     userToken: msg.context?.userToken ?? msg.userToken ?? extractBearerToken(headers, query),
     workflowId: msg.context?.workflowId ?? msg.workflowId,
     workflowName: msg.context?.workflowName ?? msg.workflowName,
+    workflowContent: msg.context?.workflowContent ?? msg.workflowContent,
     computingUnitId: msg.context?.computingUnitId ?? msg.computingUnitId,
   };
   const agent = await getAgent(agentId);
@@ -495,6 +500,7 @@ async function buildTaskContext(
     ...requestContext,
     workflowId: parseOptionalPositiveNumber(requestContext.workflowId, "workflowId"),
     workflowName: typeof requestContext.workflowName === "string" ? requestContext.workflowName : undefined,
+    workflowContent: requestContext.workflowContent,
     computingUnitId: parseOptionalPositiveNumber(requestContext.computingUnitId, "computingUnitId"),
   });
 }

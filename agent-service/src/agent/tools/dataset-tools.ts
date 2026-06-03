@@ -96,8 +96,7 @@ export function formatAccessibleDatasets(datasets: DashboardDataset[]): string {
     const descriptionText = description ? `, description=${description}` : "";
     lines.push(
       `- did=${did}, name=${dataset.name}, owner=${entry.ownerEmail}, visibility=${visibility}, ` +
-        `access=${entry.accessPrivilege}, ownership=${ownership}, downloadable=${downloadable}, ` +
-        `size=${formatSize(entry.size)}${descriptionText}`
+        `access=${entry.accessPrivilege}, ownership=${ownership}, downloadable=${downloadable}${descriptionText}`
     );
   }
   return lines.join("\n");
@@ -155,7 +154,7 @@ export function formatDatasetFilePaths(context: DatasetVersionContext, paths: Da
 export function createListDatasetsTool(getConfig: () => DatasetToolConfig) {
   return tool({
     description:
-      "List datasets the current user can access, including owned private datasets, shared datasets, and public datasets. The result includes dataset id, owner, visibility, access privilege, and size.",
+      "List datasets the current user can access, including owned private datasets, shared datasets, and public datasets. The result includes dataset id, owner, visibility, and access privilege.",
     inputSchema: z.object({
       visibility: z
         .enum(["all", "public", "private"])

@@ -226,7 +226,7 @@ BioMCP tools expose biomedical source lookup and interpretation through the stan
 Your conversation context is a single message with an event log and, when the user is in a workflow workspace, the current workflow:
 
 - \`# Event Context\` - every visible user and agent ReAct step in chronological order.
-- \`# Current Workflow\` - the live workflow DAG, appended only when workflow context is available.
+- \`# Current Workflow\` - the live workflow DAG (operators with their input/output table schemas, and links). Present whenever you are in a workflow workspace; renders \`(empty)\` when the workflow has no operators yet.
 
 **Overall layout:**
 
@@ -273,10 +273,10 @@ Result:
 
 ### Operator \`<operator_id>\` (<operator_type>, executed|failed|not-executed)
 Summary: <what the operator does>
-Input Schema (port 0): [<attr>: <type>, ...]
+Input Table Schema (port 0): [<attr>: <type>, ...]
 Properties:
   <key>: <value>
-Output Schema: [<attr>: <type>, ...]
+Output Table Schema: [<attr>: <type>, ...]
 Compilation Error: <message, only if compilation failed>
 Result:
   <execution output, table shape, and sample data>
@@ -306,11 +306,11 @@ Result:
 
 ## Operator Discovery
 
-Operator types and property schemas are discovered through tools instead of being embedded in this prompt.
+Operator definitions (each operator type's configuration properties) are discovered through tools instead of being embedded in this prompt.
 
 - Use \`list_operator_types\` to get only the available operator type names from the backend metadata store.
-- Use one of those exact operator type names with \`get_operator_schema\` before setting properties in \`addOperator\` or \`modifyOperator\`.
-- \`get_operator_schema\` returns the trimmed schema: required fields and the property details needed for valid operator properties.
+- Use one of those exact operator type names with \`get_operator_definition\` before setting properties in \`addOperator\` or \`modifyOperator\`.
+- \`get_operator_definition\` returns an operator type's definition from the system metadata: its required fields and property details for valid operator properties. This is how to configure an operator — it is not an operator in \`# Current Workflow\`, and not the \`Input/Output Table Schema\` (the data columns flowing between operators).
 - Do not guess operator property names from memory. If an operator type or property is uncertain, call these tools first.
 `;
 

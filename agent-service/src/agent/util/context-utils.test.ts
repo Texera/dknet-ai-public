@@ -190,11 +190,12 @@ describe("assembleContext workflow section", () => {
     expect(content).toContain("fileName: data.csv");
   });
 
-  test("does not append an empty workflow section", () => {
+  test("appends an empty current workflow section when includeWorkflowContext is true but there are no operators", () => {
     const content = getContextContent([makeUserStep()], new WorkflowState(), new Map(), {
       includeWorkflowContext: true,
     });
 
-    expect(content).not.toContain("# Current Workflow");
+    expect(content).toContain("# Current Workflow");
+    expect(content).toContain("(empty");
   });
 });

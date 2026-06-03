@@ -23,7 +23,7 @@ import { createErrorResult, createToolResult } from "./tools-utility";
 import type { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
 
 export const TOOL_NAME_LIST_OPERATOR_TYPES = "list_operator_types";
-export const TOOL_NAME_GET_OPERATOR_SCHEMA = "get_operator_schema";
+export const TOOL_NAME_GET_OPERATOR_DEFINITION = "get_operator_definition";
 
 function availableTypes(metadataStore: WorkflowSystemMetadata): string {
   return Object.keys(metadataStore.getAllOperatorTypes()).join(", ");
@@ -33,7 +33,7 @@ export function createListOperatorTypesTool(metadataStore: WorkflowSystemMetadat
   return tool({
     description:
       "List the Texera operator type names available in the current backend metadata store. " +
-      "Use a returned operator type with get_operator_schema before setting operator properties.",
+      "Use a returned operator type with get_operator_definition before setting operator properties.",
     inputSchema: z.object({}),
     execute: async () => {
       return createToolResult(JSON.stringify({ operatorTypes: Object.keys(metadataStore.getAllOperatorTypes()) }));
@@ -41,11 +41,14 @@ export function createListOperatorTypesTool(metadataStore: WorkflowSystemMetadat
   });
 }
 
-export function createGetOperatorSchemaTool(metadataStore: WorkflowSystemMetadata) {
+export function createGetOperatorDefinitionTool(metadataStore: WorkflowSystemMetadata) {
   return tool({
     description:
-      "Return the trimmed schema for one Texera operator type. " +
-      "Call this before addOperator or modifyOperator whenever you need to set operator properties.",
+      "Return the definition of one Texera operator type as defined by the system: its configuration property " +
+      "schema and metadata (required fields, property details, and ports). This is the operator's static " +
+      "definition from the backend metadata store — it is NOT an operator instance in the current workflow, and " +
+      "NOT the input/output table (data) schema of an operator's results. Call this before addOperator or " +
+      "modifyOperator whenever you need to set operator properties.",
     inputSchema: z.object({
       operatorType: z
         .string()

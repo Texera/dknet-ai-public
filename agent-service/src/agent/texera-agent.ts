@@ -48,9 +48,9 @@ import {
   type ToolContext,
 } from "./tools/workflow-crud-tools";
 import {
-  createGetOperatorSchemaTool,
+  createGetOperatorDefinitionTool,
   createListOperatorTypesTool,
-  TOOL_NAME_GET_OPERATOR_SCHEMA,
+  TOOL_NAME_GET_OPERATOR_DEFINITION,
   TOOL_NAME_LIST_OPERATOR_TYPES,
 } from "./tools/operator-metadata-tools";
 import {
@@ -316,7 +316,7 @@ export class TexeraAgent {
 
     const tools: Record<string, any> = {
       [TOOL_NAME_LIST_OPERATOR_TYPES]: createListOperatorTypesTool(this.metadataStore),
-      [TOOL_NAME_GET_OPERATOR_SCHEMA]: createGetOperatorSchemaTool(this.metadataStore),
+      [TOOL_NAME_GET_OPERATOR_DEFINITION]: createGetOperatorDefinitionTool(this.metadataStore),
       [TOOL_NAME_DELETE_OPERATOR]: createDeleteOperatorTool(this.workflowState, context),
       [TOOL_NAME_ADD_OPERATOR]: createAddOperatorTool(this.workflowState, operatorSchemas, context),
       [TOOL_NAME_MODIFY_OPERATOR]: createModifyOperatorTool(this.workflowState, context),
@@ -547,6 +547,14 @@ export class TexeraAgent {
   }
 
   private async loadWorkflowForTask(taskContext: AgentTaskContext): Promise<string> {
+    if (taskContext.workflowContent !== undefined) {
+      this.workflowState.setWorkflowContent(taskContext.workflowContent);
+      this.log.debug(
+        { workflowId: taskContext.workflowId, operators: taskContext.workflowContent.operators.length },
+        "loaded live workflow content for agent task"
+      );
+      return taskContext.workflowName || "Agent Workflow";
+    }
     if (taskContext.workflowId === undefined) {
       return taskContext.workflowName || "Agent Workflow";
     }
@@ -587,7 +595,7 @@ export class TexeraAgent {
     this.setTaskContext(taskContext);
 
     try {
-      if (taskContext.workflowId !== undefined) {
+      if (taskContext.workflowId !== undefined || taskContext.workflowContent !== undefined) {
         workflowName = await this.loadWorkflowForTask(taskContext);
         workflowLoaded = true;
       }
@@ -620,7 +628,7 @@ export class TexeraAgent {
 
       let isFirstStep = true;
       let lastPreparedMessages: ModelMessage[] | undefined;
-      const includeWorkflowContext = taskContext.workflowId !== undefined && taskContext.computingUnitId !== undefined;
+      const includeWorkflowContext = taskContext.workflowId !== undefined || taskContext.workflowContent !== undefined;
 
       // Pass only the current user turn; prepareStep rebuilds full context each step
       // (historical interactions + DAG + this message).
@@ -812,7 +820,11 @@ export class TexeraAgent {
         error: error.message || String(error),
       };
     } finally {
-      if (workflowLoaded) {
+      // The frontend auto-persists the workflow whenever the canvas changes, and the agent's
+      // edits are replayed onto that canvas, so the frontend is the single persistence writer
+      // while a chat client is connected. Persist from here only when running headless (no
+      // connected websocket) to avoid two writers racing on the same workflow.
+      if (workflowLoaded && this.websockets.size === 0) {
         await this.persistWorkflowForTask(taskContext, workflowName);
       }
       this.abortController = null;

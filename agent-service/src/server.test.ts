@@ -249,7 +249,7 @@ describe(`POST ${API}/agents`, () => {
     const systemInfo = agent!.getSystemInfo();
     const toolNames = systemInfo.tools.map(tool => tool.name);
     expect(toolNames).toContain("list_operator_types");
-    expect(toolNames).toContain("get_operator_schema");
+    expect(toolNames).toContain("get_operator_definition");
     expect(agent!.getSettingsApi()).not.toHaveProperty("allowedOperatorTypes");
 
     agent!.updateSettings({ maxOperatorResultCharLimit: 8 });

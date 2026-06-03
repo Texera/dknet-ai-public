@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
-import { createGetOperatorSchemaTool, createListOperatorTypesTool } from "./operator-metadata-tools";
+import { createGetOperatorDefinitionTool, createListOperatorTypesTool } from "./operator-metadata-tools";
 
 function metadataStore(): WorkflowSystemMetadata {
   const store = new WorkflowSystemMetadata();
@@ -82,8 +82,8 @@ describe("operator metadata tools", () => {
     expect(result).not.toContain("Source");
   });
 
-  test("get_operator_schema returns the trimmed compact schema for one operator", async () => {
-    const result = await (createGetOperatorSchemaTool(metadataStore()) as any).execute({
+  test("get_operator_definition returns the trimmed compact schema for one operator", async () => {
+    const result = await (createGetOperatorDefinitionTool(metadataStore()) as any).execute({
       operatorType: "CSVFileScan",
     });
     const parsed = JSON.parse(result);
@@ -102,8 +102,8 @@ describe("operator metadata tools", () => {
     expect(JSON.stringify(parsed.schema)).not.toContain("propertyOrder");
   });
 
-  test("get_operator_schema reports unknown operator types", async () => {
-    const result = await (createGetOperatorSchemaTool(metadataStore()) as any).execute({
+  test("get_operator_definition reports unknown operator types", async () => {
+    const result = await (createGetOperatorDefinitionTool(metadataStore()) as any).execute({
       operatorType: "Missing",
     });
 

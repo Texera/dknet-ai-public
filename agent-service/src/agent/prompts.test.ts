@@ -70,7 +70,7 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("list_operator_types");
     expect(prompt).toContain("only the available operator type names");
-    expect(prompt).toContain("get_operator_schema");
+    expect(prompt).toContain("get_operator_definition");
     expect(prompt).toContain("Use one of those exact operator type names");
     expect(prompt).not.toContain("## CSVFileScan");
     expect(prompt).not.toContain('"fileName"');

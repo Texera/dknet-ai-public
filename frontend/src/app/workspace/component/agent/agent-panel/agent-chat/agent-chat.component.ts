@@ -38,6 +38,7 @@ import { distinctUntilChanged, filter, finalize, map, switchMap, takeUntil } fro
 import { AgentState, ReActStep } from "../../../../service/agent/agent-types";
 import { AgentInfo, AgentService, ModelType } from "../../../../service/agent/agent.service";
 import { WorkflowActionService } from "../../../../service/workflow-graph/model/workflow-action.service";
+import { applyWorkflowContentDelta } from "../../../../service/agent/workflow-delta";
 import { NotificationService } from "../../../../../common/service/notification/notification.service";
 import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
@@ -319,16 +320,12 @@ export class AgentChatComponent implements OnInit, AfterViewChecked, OnDestroy, 
         untilDestroyed(this)
       )
       .subscribe(editedWorkflow => {
-        // Never blank the canvas with an empty workflow.
-        if ((editedWorkflow.content?.operators?.length ?? 0) === 0) {
-          return;
-        }
-        // The agent edits only the workflow CONTENT. Preserve the current workflow's
-        // metadata (id, name, ...) so the menu bar keeps the workflow name/id instead
-        // of resetting to "Untitled workflow" with no id.
-        const current = this.workflowActionService.getWorkflow();
-        const merged = current ? { ...current, content: editedWorkflow.content } : editedWorkflow;
-        this.workflowActionService.reloadWorkflow(merged, false, false);
+        // Apply the agent's edits granularly through the normal edit API so they flow into
+        // the shared model, render live, and auto-persist like a human edit — instead of a
+        // full canvas reload that flickers, resets the viewport, and clobbers untouched
+        // operators. The util skips a blank snapshot so a transient empty payload can never
+        // wipe the canvas, and preserves workflow metadata since it never touches it.
+        applyWorkflowContentDelta(this.workflowActionService, editedWorkflow.content);
       });
   }
 

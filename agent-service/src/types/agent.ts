@@ -100,6 +100,7 @@ export interface AgentTaskContext {
   userInfo?: UserInfo;
   workflowId?: number;
   workflowName?: string;
+  workflowContent?: WorkflowContent;
   computingUnitId?: number;
 }
 
