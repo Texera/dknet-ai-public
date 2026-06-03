@@ -50,7 +50,7 @@ import org.apache.texera.amber.error.ErrorUtils.{
 }
 import org.apache.texera.dao.jooq.generated.tables.pojos.User
 import org.apache.texera.service.util.LargeBinaryManager
-import org.apache.texera.web.model.websocket.event.TexeraWebSocketEvent
+import org.apache.texera.web.model.websocket.event.{CacheUsageUpdateEvent, TexeraWebSocketEvent}
 import org.apache.texera.web.model.websocket.request.WorkflowExecuteRequest
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
 import org.apache.texera.web.service.WorkflowService.mkWorkflowStateId
@@ -107,19 +107,26 @@ class WorkflowService(
 
   val resultService: ExecutionResultService =
     new ExecutionResultService(workflowId, computingUnitId, stateStore)
+  // Operator-port-result cache. On a Postgres-free computing unit (issue #5011) the persistence is
+  // routed to the Dashboard Service over HTTP (RemoteOperatorPortCacheService); on the dashboard
+  // itself (which holds STORAGE_JDBC_*) it talks to Postgres directly.
+  val cacheService: OperatorPortCache =
+    if (RemoteExecutionMetadata.enabled) new RemoteOperatorPortCacheService()
+    else
+      new OperatorPortCacheService(
+        new org.apache.texera.web.dao.OperatorPortCacheDao(org.apache.texera.dao.SqlServer.getInstance())
+      )
   val lifeCycleManager: WorkflowLifecycleManager = new WorkflowLifecycleManager(
     s"workflowId=$workflowId",
     cleanUpTimeout,
     () => {
-      // clear the storage resources associated with the latest execution. This runs on a lifecycle
-      // timer with no request context (hence no per-execution user token); it is best-effort, so a
-      // metadata failure here must never propagate and tear down the session.
+      // Clear execution-scoped artifacts (runtime stats, result/console docs, cache entries) for all
+      // executions. This runs on a lifecycle timer with no request context (hence no per-execution
+      // user token); it is best-effort, so a metadata failure here must never propagate and tear
+      // down the session.
       try {
-        WorkflowExecutionService
-          .getLatestExecutionId(workflowId, computingUnitId)
-          .foreach(eid => {
-            clearExecutionResources(eid)
-          })
+        val executionIds = WorkflowExecutionService.getExecutionIds(workflowId, computingUnitId)
+        clearExecutionResources(executionIds)
       } catch {
         case e: Throwable =>
           logger.warn(s"Best-effort end-of-session cleanup failed (continuing): ${e.getMessage}")
@@ -161,6 +168,10 @@ class WorkflowService(
     new CompositeDisposable(subscriptions :+ errorSubscription: _*)
   }
 
+  /**
+    * Subscribes to execution-scoped websocket events and emits cache usage snapshots
+    * so refreshed sessions can rehydrate cached output labels.
+    */
   def connectToExecution(onNext: TexeraWebSocketEvent => Unit): Disposable = {
     val localDisposable = new CompositeDisposable()
     val disposable = executionService.subscribe { execService: WorkflowExecutionService =>
@@ -172,9 +183,21 @@ class WorkflowService(
         )
         .toSeq
       localDisposable.addAll(subscriptions: _*)
+      emitCacheUsageSnapshot(execService, onNext)
     }
     // Note: this new CompositeDisposable is necessary. DO NOT OPTIMIZE.
     new CompositeDisposable(localDisposable, disposable)
+  }
+
+  /**
+    * Sends the latest cache usage metadata for the current execution to a new subscriber.
+    */
+  private def emitCacheUsageSnapshot(
+      execService: WorkflowExecutionService,
+      onNext: TexeraWebSocketEvent => Unit
+  ): Unit = {
+    val cachedOutputs = execService.executionStateStore.cacheUsageStore.getState.cachedOutputs
+    onNext(CacheUsageUpdateEvent(cachedOutputs))
   }
 
   def disconnect(): Unit = {
@@ -207,19 +230,11 @@ class WorkflowService(
     workflowContext.userJwtToken = req.userJwtToken
     var controllerConf = ControllerConfig.default
 
-    // clean up results from previous run
-    val previousExecutionId =
-      WorkflowExecutionService.getLatestExecutionId(
-        workflowId,
-        req.computingUnitId,
-        req.userJwtToken
-      )
-    previousExecutionId.foreach(eid => {
-      // Authorize cleanup of the user's previous execution with the token they just forwarded
-      // (a no-DB CU has no other credential for an execution it didn't create this run).
-      RemoteExecutionMetadata.registerExecutionToken(eid.id, req.userJwtToken)
-      clearExecutionResources(eid)
-    }) // TODO: change this behavior after enabling cache.
+    // NOTE: the previous run's results are intentionally NOT cleaned up here. Operator-port-result
+    // caching reuses materialized outputs across executions of the same workflow, so prior results
+    // must survive into the next run. Stale resources are reclaimed by the lifecycle-timer cleanup
+    // (which invalidates cache entries by source execution). The new execution's per-execution token
+    // is registered below via insertNewExecution -> RemoteExecutionMetadata.createExecution.
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
       workflowContext.workflowId,
@@ -295,6 +310,7 @@ class WorkflowService(
         controllerConf,
         workflowContext,
         resultService,
+        cacheService,
         req,
         executionStateStore,
         errorHandler,
@@ -324,32 +340,49 @@ class WorkflowService(
   }
 
   /**
-    * Cleans up all resources associated with a workflow execution.
+    * Cleans up all resources associated with workflow executions.
     *
     * This method performs resource cleanup in the following sequence:
-    *  1. Retrieves all document URIs associated with the execution
-    *  2. Clears URI references from the execution registry
-    *  3. Safely clears all result and console message documents
-    *  4. Expires Iceberg snapshots for runtime statistics
-    *  5. Deletes large binaries from MinIO
+    *  1. Retrieves all document URIs associated with the executions
+    *  2. Invalidates cache entries produced by these executions (cache rows + cached docs + cache-linked operator_port_executions rows)
+    *  3. Clears URI references from the execution registry
+    *  4. Safely clears all result and console message documents
+    *  5. Expires Iceberg snapshots for runtime statistics
+    *  6. Deletes large binaries from MinIO
     *
-    * @param eid The execution identity to clean up resources for
+    * @param executionIds execution identities to clean up resources for
     */
-  private def clearExecutionResources(eid: ExecutionIdentity): Unit = {
-    // Cleanup is best-effort housekeeping: it reaches the dashboard for this execution's resource
-    // URIs, which can fail (e.g. no usable token for an execution this CU didn't create this run).
-    // A failure here must not crash the run that triggered the cleanup, so swallow and log it. The
-    // per-execution token is always dropped afterwards to keep the registry bounded to live runs.
+  private def clearExecutionResources(executionIds: Seq[ExecutionIdentity]): Unit = {
+    if (executionIds.isEmpty) {
+      return
+    }
+    // Cleanup is best-effort housekeeping: it reaches the dashboard for these executions' resource
+    // URIs and cache rows, which can fail (e.g. no usable token for an execution this CU didn't
+    // create this run). A failure here must not crash the run that triggered the cleanup, so swallow
+    // and log it. The per-execution tokens are always dropped afterwards to keep the registry bounded.
     try {
-      // Retrieve URIs for all resources associated with this execution
-      val resultUris = WorkflowExecutionsResource.getResultUrisByExecutionId(eid)
-      val consoleMessagesUris = WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId(eid)
+      val runtimeStatsUris =
+        executionIds.flatMap(eid =>
+          WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).toList
+        )
+
+      // Invalidate cache artifacts produced by these executions (cache rows + cached docs +
+      // cache-linked operator_port_executions rows). On the Postgres-free CU this is routed to the
+      // dashboard over HTTP.
+      val cacheInvalidation =
+        cacheService.invalidateCacheBySourceExecutionsWithArtifacts(executionIds)
+
+      val resultUris = executionIds
+        .flatMap(WorkflowExecutionsResource.getResultUrisByExecutionId)
+        .filterNot(cacheInvalidation.deletedResultUris.contains)
+      val consoleMessagesUris =
+        executionIds.flatMap(WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId)
 
       // Remove references from registry first
-      WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris(eid)
+      executionIds.foreach(WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris)
 
       // Clean up all result and console message documents
-      (resultUris ++ consoleMessagesUris).foreach { uri =>
+      (resultUris ++ consoleMessagesUris).distinct.foreach { uri =>
         try DocumentFactory.openDocument(uri)._1.clear()
         catch {
           case error: Throwable =>
@@ -358,7 +391,7 @@ class WorkflowService(
       }
 
       // Expire any Iceberg snapshots for runtime statistics
-      WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).foreach { uri =>
+      runtimeStatsUris.distinct.foreach { uri =>
         try {
           DocumentFactory.openDocument(uri)._1 match {
             case iceberg: OnIceberg => iceberg.expireSnapshots()
@@ -378,11 +411,12 @@ class WorkflowService(
     } catch {
       case e: Throwable =>
         logger.warn(
-          s"Best-effort cleanup of execution $eid resources failed (continuing): ${e.getMessage}"
+          s"Best-effort cleanup of executions ${executionIds.map(_.id).mkString(",")} failed " +
+            s"(continuing): ${e.getMessage}"
         )
     } finally {
-      // Drop any remembered per-execution token so the registry stays bounded to live executions.
-      RemoteExecutionMetadata.clearExecutionToken(eid.id)
+      // Drop any remembered per-execution tokens so the registry stays bounded to live executions.
+      executionIds.foreach(eid => RemoteExecutionMetadata.clearExecutionToken(eid.id))
     }
   }
 }

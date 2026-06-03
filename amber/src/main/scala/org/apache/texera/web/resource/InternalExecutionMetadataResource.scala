@@ -26,9 +26,12 @@ import org.apache.texera.amber.core.virtualidentity.{
   WorkflowIdentity
 }
 import org.apache.texera.amber.core.workflow.PortIdentity
+import org.apache.texera.amber.util.serde.GlobalPortIdentitySerde
 import org.apache.texera.auth.SessionUser
+import org.apache.texera.dao.SqlServer
+import org.apache.texera.web.dao.{OperatorPortCacheDao, OperatorPortCacheRecord}
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
-import org.apache.texera.web.service.ExecutionsMetadataPersistService
+import org.apache.texera.web.service.{ExecutionsMetadataPersistService, OperatorPortCacheService}
 
 import java.net.URI
 import javax.annotation.security.RolesAllowed
@@ -58,6 +61,38 @@ case class ResultUriResponse(uri: String)
 case class ResultUrisResponse(uris: List[String])
 
 case class LatestExecutionResponse(eid: Int)
+
+case class ExecutionIdsResponse(eids: List[Int])
+
+// Operator-port-result cache (issue #5011): a Postgres-free computing unit routes cache
+// lookup/upsert/invalidate here, where the dashboard service holds the DB connection.
+case class CacheLookupPort(gpid: String, subdagHash: String)
+
+case class CacheLookupRequest(workflowId: Long, ports: List[CacheLookupPort])
+
+case class CacheHit(
+    gpid: String,
+    resultUri: String,
+    fingerprintJson: String,
+    tupleCount: Option[Long],
+    sourceExecutionId: Option[Long]
+)
+
+case class CacheLookupResponse(hits: List[CacheHit])
+
+case class CacheUpsertRequest(
+    workflowId: Long,
+    globalPortId: String,
+    subdagHash: String,
+    fingerprintJson: String,
+    resultUri: String,
+    tupleCount: Option[Long],
+    sourceExecutionId: Long
+)
+
+case class CacheInvalidateBySourceRequest(executionIds: List[Long])
+
+case class CacheInvalidationResultResponse(deletedRows: Int, deletedResultUris: List[String])
 
 /**
   * Internal HTTP endpoints that the dashboard service exposes so a computing unit can perform
@@ -198,5 +233,104 @@ class InternalExecutionMetadataResource {
       .getLatestExecutionID(wid, cuid)
       .map(eid => LatestExecutionResponse(eid.intValue()))
       .getOrElse(throw new NotFoundException(s"No execution found for workflow $wid"))
+  }
+
+  // All execution ids for a workflow + computing unit (newest first). A Postgres-free CU uses this
+  // for lifecycle cleanup of execution-scoped artifacts.
+  @GET
+  @Path("/executions")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def getExecutionIds(
+      @QueryParam("wid") wid: Integer,
+      @QueryParam("cuid") cuid: Integer,
+      @Auth user: SessionUser
+  ): ExecutionIdsResponse = {
+    ExecutionIdsResponse(WorkflowExecutionsResource.getExecutionIDs(wid, cuid).map(_.intValue()))
+  }
+
+  // Result URI for a (execution, serialized global port) pair. Used by the engine's cache hook on
+  // the CU (PortCompletedHandler) when a materialized output port completes.
+  @GET
+  @Path("/{eid}/port-result-by-gpid")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def getResultUriByGlobalPortId(
+      @PathParam("eid") eid: Long,
+      @QueryParam("gpid") gpid: String,
+      @Auth user: SessionUser
+  ): ResultUriResponse = {
+    WorkflowExecutionsResource
+      .getResultUriByPhysicalPortId(
+        ExecutionIdentity(eid),
+        GlobalPortIdentitySerde.deserializeFromString(gpid)
+      )
+      .map(uri => ResultUriResponse(uri.toString))
+      .getOrElse(throw new NotFoundException(s"No result URI for port $gpid in execution $eid"))
+  }
+
+  // ── Operator-port-result cache (issue #5011): the Postgres-free CU routes cache persistence here.
+
+  @POST
+  @Path("/{eid}/cache-lookup")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def cacheLookup(
+      @PathParam("eid") eid: Long,
+      request: CacheLookupRequest,
+      @Auth user: SessionUser
+  ): CacheLookupResponse = {
+    val dao = new OperatorPortCacheDao(SqlServer.getInstance())
+    val hits = request.ports.flatMap { port =>
+      dao
+        .get(request.workflowId, port.gpid, port.subdagHash)
+        .map(rec =>
+          CacheHit(
+            gpid = port.gpid,
+            resultUri = rec.resultUri.toString,
+            fingerprintJson = rec.fingerprintJson,
+            tupleCount = rec.tupleCount,
+            sourceExecutionId = rec.sourceExecutionId
+          )
+        )
+    }
+    CacheLookupResponse(hits)
+  }
+
+  @POST
+  @Path("/{eid}/cache")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def cacheUpsert(
+      @PathParam("eid") eid: Long,
+      request: CacheUpsertRequest,
+      @Auth user: SessionUser
+  ): Unit = {
+    val dao = new OperatorPortCacheDao(SqlServer.getInstance())
+    dao.upsert(
+      OperatorPortCacheRecord(
+        workflowId = request.workflowId,
+        globalPortId = request.globalPortId,
+        subdagHash = request.subdagHash,
+        fingerprintJson = request.fingerprintJson,
+        resultUri = new URI(request.resultUri),
+        tupleCount = request.tupleCount,
+        sourceExecutionId = Some(request.sourceExecutionId)
+      )
+    )
+  }
+
+  @POST
+  @Path("/{eid}/cache/invalidate-by-source")
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  def cacheInvalidateBySource(
+      @PathParam("eid") eid: Long,
+      request: CacheInvalidateBySourceRequest,
+      @Auth user: SessionUser
+  ): CacheInvalidationResultResponse = {
+    val cacheService = new OperatorPortCacheService(new OperatorPortCacheDao(SqlServer.getInstance()))
+    val result = cacheService.invalidateCacheBySourceExecutionsWithArtifacts(
+      request.executionIds.map(ExecutionIdentity(_))
+    )
+    CacheInvalidationResultResponse(
+      result.deletedRows,
+      result.deletedResultUris.map(_.toString).toList
+    )
   }
 }

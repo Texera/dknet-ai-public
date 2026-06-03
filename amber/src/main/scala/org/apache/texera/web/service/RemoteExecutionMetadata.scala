@@ -162,10 +162,27 @@ object RemoteExecutionMetadata {
       .map(response => Integer.valueOf(objectMapper.readTree(response).get("eid").asInt()))
   }
 
+  /** All execution ids for a workflow + computing unit, newest first. Used by cleanup. */
+  def getExecutionIds(wid: Integer, cuid: Integer): List[Integer] = {
+    request(resolve(None), "GET", s"/executions?wid=$wid&cuid=$cuid", None)
+      .map { response =>
+        val eidsNode = objectMapper.readTree(response).get("eids")
+        if (eidsNode == null) List.empty[Integer]
+        else eidsNode.elements().asScala.map(node => Integer.valueOf(node.asInt())).toList
+      }
+      .getOrElse(List.empty)
+  }
+
+  /** The stored result URI for a (execution, global port) pair, by serialized GlobalPortIdentity. */
+  def getResultUriByGlobalPortId(eid: Long, serializedPortId: String): Option[URI] = {
+    request(tokenFor(eid), "GET", s"/$eid/port-result-by-gpid?gpid=${enc(serializedPortId)}", None)
+      .map(response => new URI(objectMapper.readTree(response).get("uri").asText()))
+  }
+
   private def enc(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8.name())
 
-  private def request(
+  private[service] def request(
       token: String,
       method: String,
       path: String,
