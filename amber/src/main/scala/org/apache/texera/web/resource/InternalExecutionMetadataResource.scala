@@ -310,7 +310,9 @@ class InternalExecutionMetadataResource {
         subdagHash = request.subdagHash,
         fingerprintJson = request.fingerprintJson,
         resultUri = new URI(request.resultUri),
-        tupleCount = request.tupleCount,
+        // Jackson-Scala boxes the inner of Option[Long] as Integer for small JSON numbers; coerce
+        // via Number so the DAO's Long unbox doesn't ClassCastException.
+        tupleCount = request.tupleCount.asInstanceOf[Option[Number]].map(_.longValue()),
         sourceExecutionId = Some(request.sourceExecutionId)
       )
     )
@@ -325,8 +327,9 @@ class InternalExecutionMetadataResource {
       @Auth user: SessionUser
   ): CacheInvalidationResultResponse = {
     val cacheService = new OperatorPortCacheService(new OperatorPortCacheDao(SqlServer.getInstance()))
+    // Jackson-Scala boxes List[Long] elements as Integer for small JSON numbers; coerce via Number.
     val result = cacheService.invalidateCacheBySourceExecutionsWithArtifacts(
-      request.executionIds.map(ExecutionIdentity(_))
+      request.executionIds.asInstanceOf[List[Number]].map(n => ExecutionIdentity(n.longValue()))
     )
     CacheInvalidationResultResponse(
       result.deletedRows,
