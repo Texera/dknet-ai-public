@@ -45,7 +45,6 @@ const EnvSchema = z.object({
   AGENT_SYSTEM_PROMPT_PATH: z.string().optional(),
   AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT: z.coerce.number().int().positive().optional(),
   AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT: z.coerce.number().int().positive().optional(),
-  AGENT_TOOL_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   AGENT_EXECUTION_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   AGENT_MAX_STEPS: z.coerce.number().int().positive().optional(),
   // ReAct-loop guards: warn after this many identical (tool, params) calls in one run, and bound
@@ -53,9 +52,10 @@ const EnvSchema = z.object({
   // window; the current workflow state is always shown in full).
   AGENT_REPEATED_TOOL_CALL_THRESHOLD: z.coerce.number().int().positive().default(3),
   AGENT_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(24000),
-  // Comma-separated operator types to hide from the agent (in addition to the built-in obsolete
-  // list). These stay available to GUI users; this only narrows what the agent sees/suggests.
-  AGENT_EXCLUDED_OPERATOR_TYPES: z.string().optional(),
+  // Comma-separated operator types to hide from the agent IN ADDITION TO the built-in obsolete
+  // list (which is always excluded — an empty value here still hides the built-ins). These stay
+  // available to GUI users; this only narrows what the agent sees/suggests.
+  AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES: z.string().optional(),
 
   STORAGE_JDBC_URL: z.string().default("jdbc:postgresql://localhost:5432/texera_db?currentSchema=texera_db,public"),
   STORAGE_JDBC_USERNAME: z.string().default("postgres"),

@@ -242,7 +242,7 @@ describe(`POST ${API}/agents`, () => {
         modelType: "m",
         settings: {
           maxSteps: 7,
-          toolTimeoutSeconds: 30,
+          executionTimeoutMinutes: 1,
           allowedOperatorTypes: [],
         },
       })
@@ -251,7 +251,7 @@ describe(`POST ${API}/agents`, () => {
     const persisted = await metadataStore.getAgent(created.id);
     expect(persisted?.config.settings).toMatchObject({
       maxSteps: 100,
-      toolTimeoutSeconds: 240,
+      executionTimeoutMinutes: 4,
     });
     expect(persisted?.config.settings).not.toHaveProperty("allowedOperatorTypes");
   });
@@ -493,7 +493,6 @@ describe("agent configuration endpoints", () => {
 
     const settingsWrite = await patchJson(`${API}/agents/${created.id}/settings`, {
       maxSteps: 7,
-      toolTimeoutSeconds: 30,
     });
     expect(settingsWrite.status).toBe(404);
 

@@ -196,9 +196,6 @@ export class TexeraAgent {
     if (env.AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT !== undefined) {
       this.settings.maxOperatorResultCellCharLimit = env.AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT;
     }
-    if (env.AGENT_TOOL_TIMEOUT_MS !== undefined) {
-      this.settings.toolTimeoutMs = env.AGENT_TOOL_TIMEOUT_MS;
-    }
     if (env.AGENT_EXECUTION_TIMEOUT_MS !== undefined) {
       this.settings.executionTimeoutMs = env.AGENT_EXECUTION_TIMEOUT_MS;
     }
@@ -244,9 +241,6 @@ export class TexeraAgent {
     if (settings.operatorResultSerializationMode !== undefined) {
       this.settings.operatorResultSerializationMode =
         settings.operatorResultSerializationMode as OperatorResultSerializationMode;
-    }
-    if (settings.toolTimeoutSeconds !== undefined) {
-      this.settings.toolTimeoutMs = settings.toolTimeoutSeconds * 1000;
     }
     if (settings.executionTimeoutMinutes !== undefined) {
       this.settings.executionTimeoutMs = settings.executionTimeoutMinutes * 60000;
@@ -513,7 +507,6 @@ export class TexeraAgent {
       maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
       maxOperatorResultCellCharLimit: this.settings.maxOperatorResultCellCharLimit,
       operatorResultSerializationMode: this.settings.operatorResultSerializationMode,
-      toolTimeoutSeconds: Math.round(this.settings.toolTimeoutMs / 1000),
       executionTimeoutMinutes: Math.round(this.settings.executionTimeoutMs / 60000),
       disabledTools: Array.from(this.settings.disabledTools),
       maxSteps: this.settings.maxSteps,
@@ -544,7 +537,6 @@ export class TexeraAgent {
     maxOperatorResultCharLimit?: number;
     maxOperatorResultCellCharLimit?: number;
     operatorResultSerializationMode?: OperatorResultSerializationMode;
-    toolTimeoutMs?: number;
     executionTimeoutMs?: number;
     disabledTools?: Set<string>;
     maxSteps?: number;
@@ -557,9 +549,6 @@ export class TexeraAgent {
     }
     if (updates.operatorResultSerializationMode !== undefined) {
       this.settings.operatorResultSerializationMode = updates.operatorResultSerializationMode;
-    }
-    if (updates.toolTimeoutMs !== undefined) {
-      this.settings.toolTimeoutMs = updates.toolTimeoutMs;
     }
     if (updates.executionTimeoutMs !== undefined) {
       this.settings.executionTimeoutMs = updates.executionTimeoutMs;

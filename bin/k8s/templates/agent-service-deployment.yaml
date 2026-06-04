@@ -86,8 +86,6 @@ spec:
             {{- if .Values.bioMcpService.enabled }}
             - name: MCP_SERVERS
               value: '[{"name":"biomcp","url":"http://{{ .Values.bioMcpService.name }}-svc:{{ .Values.bioMcpService.service.port }}/mcp","toolPrefix":"biomcp","apiKeyEnv":"BIOMCP_API_KEY"}]'
-            - name: MCP_REQUEST_TIMEOUT_MS
-              value: "{{ .Values.agentService.env.mcpRequestTimeoutMs }}"
             - name: BIOMCP_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -101,6 +99,12 @@ spec:
               value: /etc/agent-config/system-prompt.md
             {{- end }}
             {{- with .Values.agentService.env }}
+            # Generic MCP transport timeout — applies to every remote MCP server, so it is emitted
+            # whenever agent-service is enabled (not gated on bioMcpService).
+            {{- if .mcpRequestTimeoutMs }}
+            - name: MCP_REQUEST_TIMEOUT_MS
+              value: "{{ .mcpRequestTimeoutMs }}"
+            {{- end }}
             {{- if .maxOperatorResultCharLimit }}
             - name: AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT
               value: "{{ .maxOperatorResultCharLimit }}"
@@ -108,10 +112,6 @@ spec:
             {{- if .maxOperatorResultCellCharLimit }}
             - name: AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT
               value: "{{ .maxOperatorResultCellCharLimit }}"
-            {{- end }}
-            {{- if .toolTimeoutMs }}
-            - name: AGENT_TOOL_TIMEOUT_MS
-              value: "{{ .toolTimeoutMs }}"
             {{- end }}
             {{- if .executionTimeoutMs }}
             - name: AGENT_EXECUTION_TIMEOUT_MS
@@ -129,9 +129,10 @@ spec:
             - name: AGENT_MAX_CONTEXT_TOKENS
               value: "{{ .maxContextTokens }}"
             {{- end }}
-            {{- if .excludedOperatorTypes }}
-            - name: AGENT_EXCLUDED_OPERATOR_TYPES
-              value: "{{ .excludedOperatorTypes }}"
+            # Additive: unioned on top of the agent's built-in always-excluded operator list.
+            {{- if .extraExcludedOperatorTypes }}
+            - name: AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES
+              value: "{{ .extraExcludedOperatorTypes }}"
             {{- end }}
             {{- end }}
           # The service loads operator metadata from the dashboard service on

@@ -269,16 +269,17 @@ agentService:
     # Leave a value blank to fall back to the built-in default.
     maxOperatorResultCharLimit: 2000
     maxOperatorResultCellCharLimit: 2000
-    toolTimeoutMs: 240000
     executionTimeoutMs: 240000
     maxSteps: 100
     # ReAct-loop guards: warn after this many identical (tool, params) calls, and bound the event
     # log to roughly this estimated token budget (older events are dropped; workflow state is kept).
     repeatedToolCallThreshold: 3
     maxContextTokens: 24000
-    # Extra operator types to hide from the agent (comma-separated), on top of the built-in obsolete
-    # list. They stay available to GUI users; this only narrows what the agent sees/suggests.
-    excludedOperatorTypes: ""
+    # Operator types to hide from the agent IN ADDITION TO the built-in always-excluded obsolete list
+    # (PythonUDFSourceV2, DualInputPortsPythonUDFV2, PythonLambdaFunction, PythonTableReducer,
+    # RUDFSource, CSVOldFileScan, Dummy, SklearnTesting). Empty here still hides those built-ins;
+    # this only hides EXTRA types. Comma-separated. GUI users keep every operator regardless.
+    extraExcludedOperatorTypes: ""
   # System-prompt override (inline). Empty = the chart mounts files/system-prompt.md — a symlink to
   # agent-service/src/agent/system-prompt.md — as a ConfigMap, so the deployed prompt tracks the repo
   # (and is editable live via `kubectl edit configmap`) with no copy/paste. Set this to override that

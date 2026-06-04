@@ -20,7 +20,7 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { createErrorResult, formatExecuteOperatorResult, getVisibleResultHeaders } from "./tools-utility";
-import { distillError, formatConsoleLogs } from "./operator-error-formatting";
+import { distillError, formatConsoleLogs, successConsoleBudget } from "./operator-error-formatting";
 import type { WorkflowState } from "../workflow-state";
 import { getBackendConfig } from "../../api/backend-api";
 import { env } from "../../config/env";
@@ -563,14 +563,20 @@ export async function executeOperatorAndFormat(
     // Safety-net: TSV serialization may add padding beyond backend's raw-record budget.
     const charLimit = config.maxOperatorResultCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCharLimit;
 
-    if (dataString.length > charLimit) {
+    // Reserve a slice of the budget for console output (print/stderr) on success too — it often
+    // carries the detail the model needs — mirroring the error path and formatOperatorResult. With
+    // no console logs this is "" and the data budget is unchanged.
+    const consoleBlock = formatConsoleLogs(opInfo.consoleLogs, successConsoleBudget(charLimit));
+    const dataBudget = consoleBlock ? Math.max(0, charLimit - consoleBlock.length - 1) : charLimit;
+
+    if (dataString.length > dataBudget) {
       const allLines = dataString.split("\n");
       const headerLine = allLines[0];
       const dataRows = allLines.slice(1);
 
       const reservedSize = headerLine.length + 1;
 
-      const halfLimit = Math.floor((charLimit - reservedSize) / 2);
+      const halfLimit = Math.floor((dataBudget - reservedSize) / 2);
 
       let frontSize = 0;
       const frontRows: string[] = [];
@@ -601,7 +607,7 @@ export async function executeOperatorAndFormat(
     const metadataLines = [shapeLine, ...warningLines].filter(Boolean);
 
     const briefSummary = formatExecuteOperatorResult(operatorId);
-    return [briefSummary, ...metadataLines, dataString].filter(Boolean).join("\n");
+    return [briefSummary, ...metadataLines, dataString, consoleBlock].filter(Boolean).join("\n");
   } catch (error: any) {
     if (error.name === "AbortError") {
       throw error;

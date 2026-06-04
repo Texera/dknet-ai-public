@@ -54,8 +54,9 @@ const COMPACT_SCHEMA_EXCLUDED_KEYS = ["propertyOrder", "autofill", "autofillAttr
 
 // Obsolete/redundant operator types hidden from the AGENT to avoid confusing it (e.g. choosing a
 // stale Python or file-scan variant). They remain fully available to human users in the GUI — this
-// only narrows the agent's view. Extend at deploy time via AGENT_EXCLUDED_OPERATOR_TYPES (no rebuild).
-const DEFAULT_EXCLUDED_OPERATOR_TYPES = [
+// only narrows the agent's view. These are ALWAYS excluded; deployments can hide additional types
+// on top of this list via AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES (no rebuild).
+export const DEFAULT_EXCLUDED_OPERATOR_TYPES = [
   // Keep only the basic PythonUDFV2 among Python operators.
   "PythonUDFSourceV2",
   "DualInputPortsPythonUDFV2",
@@ -70,8 +71,13 @@ const DEFAULT_EXCLUDED_OPERATOR_TYPES = [
   "SklearnTesting",
 ];
 
-function getExcludedOperatorTypes(): Set<string> {
-  const fromEnv = (env.AGENT_EXCLUDED_OPERATOR_TYPES ?? "")
+/**
+ * The set of operator types hidden from the agent: the always-excluded built-in defaults unioned
+ * with any extra comma-separated types. `extra` defaults to AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES but
+ * is injectable so the additive contract is unit-testable without re-parsing process.env.
+ */
+export function getExcludedOperatorTypes(extra: string = env.AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES ?? ""): Set<string> {
+  const fromEnv = extra
     .split(",")
     .map(type => type.trim())
     .filter(Boolean);
@@ -204,7 +210,7 @@ export class WorkflowSystemMetadata {
       this.additionalMetadata.set(op.operatorType, op.additionalMetadata);
     }
     if (excludedCount > 0) {
-      log.info({ excludedCount }, "hid obsolete operator types from the agent");
+      log.info({ excludedCount }, "hid excluded operator types from the agent");
     }
   }
 
