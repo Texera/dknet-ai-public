@@ -146,7 +146,7 @@ describe(`POST ${API}/agents`, () => {
     expect(a.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
-  test("defaults unnamed agents to DKNetAgent", async () => {
+  test("defaults unnamed agents to dkNetAgent", async () => {
     const res = await postJson(`${API}/agents`, { modelType: "m" });
     expect(res.status).toBe(200);
 

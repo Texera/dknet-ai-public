@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { createErrorResult, formatExecuteOperatorResult, getVisibleResultHeaders } from "./tools-utility";
+import { distillError, formatConsoleLogs } from "./operator-error-formatting";
 import type { WorkflowState } from "../workflow-state";
 import { getBackendConfig } from "../../api/backend-api";
 import { env } from "../../config/env";
@@ -530,7 +531,14 @@ export async function executeOperatorAndFormat(
       if (options.onResult) {
         options.onResult(operatorId, opInfo);
       }
-      return createErrorResult(formatExecutionError(undefined, [{ operatorId, error: opInfo.error }]));
+      // Distill the error (so a long traceback's real cause survives) and append console output
+      // (print/stderr), which often carries the actual failure detail.
+      const budget = config.maxOperatorResultCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCharLimit;
+      const errorText = formatExecutionError(undefined, [
+        { operatorId, error: distillError(opInfo.error, Math.floor(budget * 0.6)) },
+      ]);
+      const consoleBlock = formatConsoleLogs(opInfo.consoleLogs, Math.floor(budget * 0.4));
+      return createErrorResult([errorText, consoleBlock].filter(Boolean).join("\n\n"));
     }
 
     if (!opInfo.result || !Array.isArray(opInfo.result)) {

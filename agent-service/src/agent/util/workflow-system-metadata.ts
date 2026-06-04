@@ -21,6 +21,7 @@ import Ajv from "ajv";
 import { fetchOperatorMetadata, type OperatorSchema, type OperatorMetadata } from "../../api/backend-api";
 import type { ValidationError, Validation } from "../../types/workflow";
 import { createLogger } from "../../logger";
+import { env } from "../../config/env";
 
 const log = createLogger("WorkflowSystemMetadata");
 
@@ -50,6 +51,32 @@ const FILTERED_DEFINITION_KEYS = [
 ];
 
 const COMPACT_SCHEMA_EXCLUDED_KEYS = ["propertyOrder", "autofill", "autofillAttributeOnPort", "attributeTypeRules"];
+
+// Obsolete/redundant operator types hidden from the AGENT to avoid confusing it (e.g. choosing a
+// stale Python or file-scan variant). They remain fully available to human users in the GUI — this
+// only narrows the agent's view. Extend at deploy time via AGENT_EXCLUDED_OPERATOR_TYPES (no rebuild).
+const DEFAULT_EXCLUDED_OPERATOR_TYPES = [
+  // Keep only the basic PythonUDFV2 among Python operators.
+  "PythonUDFSourceV2",
+  "DualInputPortsPythonUDFV2",
+  "PythonLambdaFunction",
+  "PythonTableReducer",
+  // Keep only the basic RUDF among R operators (RUDFSource is the 1-out source variant).
+  "RUDFSource",
+  // Obsolete file scan, superseded by CSVFileScan.
+  "CSVOldFileScan",
+  // Test/placeholder operators.
+  "Dummy",
+  "SklearnTesting",
+];
+
+function getExcludedOperatorTypes(): Set<string> {
+  const fromEnv = (env.AGENT_EXCLUDED_OPERATOR_TYPES ?? "")
+    .split(",")
+    .map(type => type.trim())
+    .filter(Boolean);
+  return new Set([...DEFAULT_EXCLUDED_OPERATOR_TYPES, ...fromEnv]);
+}
 
 function filterObjectKeys(obj: any, keysToExclude: string[]): any {
   if (!obj || typeof obj !== "object") {
@@ -162,13 +189,22 @@ export class WorkflowSystemMetadata {
   }
 
   loadFromMetadata(metadata: OperatorMetadata): void {
+    const excluded = getExcludedOperatorTypes();
+    let excludedCount = 0;
     for (const op of metadata.operators) {
+      if (excluded.has(op.operatorType)) {
+        excludedCount++;
+        continue;
+      }
       this.schemas.set(op.operatorType, op.jsonSchema);
       this.descriptions.set(
         op.operatorType,
         op.additionalMetadata.operatorDescription || op.additionalMetadata.userFriendlyName
       );
       this.additionalMetadata.set(op.operatorType, op.additionalMetadata);
+    }
+    if (excludedCount > 0) {
+      log.info({ excludedCount }, "hid obsolete operator types from the agent");
     }
   }
 

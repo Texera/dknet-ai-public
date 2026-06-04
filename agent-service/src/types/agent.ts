@@ -34,7 +34,7 @@ export interface TokenUsage {
 }
 
 export const INITIAL_STEP_ID = "step-initial";
-export const DEFAULT_AGENT_NAME = "DKNetAgent";
+export const DEFAULT_AGENT_NAME = "dkNetAgent";
 
 export interface ReActStep {
   id: string;

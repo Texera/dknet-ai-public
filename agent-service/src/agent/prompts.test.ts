@@ -26,7 +26,7 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(new WorkflowSystemMetadata());
     const normalizedPrompt = prompt.toLowerCase();
 
-    expect(prompt).toContain("You are DKNetAgent, the DKNet-AI assistant for dknet-ai.org");
+    expect(prompt).toContain("You are dkNetAgent, the DKNet-AI assistant for dknet-ai.org");
     expect(prompt).toContain("Use DKNet-AI as the primary platform name");
     expect(prompt).toContain("Apache Texera is the underlying workflow/dataflow engine");
     expect(normalizedPrompt).toContain("on-demand computing resources");
