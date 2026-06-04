@@ -265,6 +265,13 @@ accessControlService:
 agentService:
   enabled: true
   name: agent-service
+  # MUST stay 1. Agents are held in memory per pod (server.ts `agentStore`), the ReAct
+  # run executes on the pod the /react WebSocket lands on, and broadcastToAgent only
+  # reaches sockets on that same pod. The gateway consistent-hash is keyed on a header the
+  # browser WebSocket cannot set, so it does NOT pin the WS — with >1 replica the run pod
+  # and the REST-control pod diverge (stop/clear/checkout hit the wrong pod, multi-tab
+  # streaming breaks). Running multiple replicas safely requires cross-pod coordination
+  # (shared pub/sub + run registry), which does not exist yet.
   numOfPods: 1
   imageName: texera-agent-service
   service:
@@ -301,6 +308,9 @@ bioMcpService:
   name: bio-mcp-service
   numOfPods: 1
   imageName: texera-bio-mcp-service
+  # Bun.serve idleTimeout (seconds). Bun's default 10s tore down long MCP SSE streams /
+  # slow PubMed searches -> "MCP session not found". 255 is Bun's max; 0 disables.
+  idleTimeoutSeconds: 255
   service:
     type: ClusterIP
     port: 3010

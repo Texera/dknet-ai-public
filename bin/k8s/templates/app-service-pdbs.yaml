@@ -23,8 +23,10 @@
 # keeps each service continuously available (at most one replica down at a time)
 # while still permitting that consolidation — the right trade-off for stateless,
 # horizontally-replicated services. Singletons that cannot tolerate eviction
-# (postgres, lakefs, gateway, the CU manager) keep do-not-disrupt instead.
-{{- range $svc := list .Values.webserver.name .Values.accessControlService.name .Values.agentService.name .Values.configService.name .Values.fileService.name .Values.litellm.name .Values.workflowCompilingService.name }}
+# (postgres, lakefs, gateway, the CU manager, and the agent service) keep
+# do-not-disrupt instead — agent-service is a stateful single-replica service
+# (in-memory agentStore + per-pod ReAct runs), so it is deliberately excluded here.
+{{- range $svc := list .Values.webserver.name .Values.accessControlService.name .Values.configService.name .Values.fileService.name .Values.litellm.name .Values.workflowCompilingService.name }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
