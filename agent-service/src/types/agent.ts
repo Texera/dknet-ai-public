@@ -79,8 +79,8 @@ export interface AgentSettings {
 
 export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "systemPrompt"> = {
   disabledTools: new Set(),
-  maxOperatorResultCharLimit: 2000,
-  maxOperatorResultCellCharLimit: 2000,
+  maxOperatorResultCharLimit: 10000,
+  maxOperatorResultCellCharLimit: 10000,
   operatorResultSerializationMode: OperatorResultSerializationMode.TSV,
   executionTimeoutMs: 240000,
   maxSteps: 100,

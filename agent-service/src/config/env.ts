@@ -51,7 +51,7 @@ const EnvSchema = z.object({
   // the event log to roughly this estimated token budget (older events are dropped by a rolling
   // window; the current workflow state is always shown in full).
   AGENT_REPEATED_TOOL_CALL_THRESHOLD: z.coerce.number().int().positive().default(3),
-  AGENT_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(24000),
+  AGENT_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(200000),
   // Comma-separated operator types to hide from the agent IN ADDITION TO the built-in obsolete
   // list (which is always excluded — an empty value here still hides the built-ins). These stay
   // available to GUI users; this only narrows what the agent sees/suggests.
