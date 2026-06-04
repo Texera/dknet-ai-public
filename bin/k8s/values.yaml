@@ -284,7 +284,7 @@ agentService:
     # ReAct-loop guards: warn after this many identical (tool, params) calls, and bound the event
     # log to roughly this estimated token budget (older events are dropped; workflow state is kept).
     repeatedToolCallThreshold: 3
-    maxContextTokens: 200000
+    maxContextTokens: 80000
     # Operator types to hide from the agent IN ADDITION TO the built-in always-excluded obsolete list
     # (PythonUDFSourceV2, DualInputPortsPythonUDFV2, PythonLambdaFunction, PythonTableReducer,
     # RUDFSource, CSVOldFileScan, Dummy, SklearnTesting). Empty here still hides those built-ins;
