@@ -23,10 +23,18 @@
 # keeps each service continuously available (at most one replica down at a time)
 # while still permitting that consolidation — the right trade-off for stateless,
 # horizontally-replicated services. Singletons that cannot tolerate eviction
-# (postgres, lakefs, gateway, the CU manager, and the agent service) keep
-# do-not-disrupt instead — agent-service is a stateful single-replica service
-# (in-memory agentStore + per-pod ReAct runs), so it is deliberately excluded here.
-{{- range $svc := list .Values.webserver.name .Values.accessControlService.name .Values.configService.name .Values.fileService.name .Values.litellm.name .Values.workflowCompilingService.name }}
+# (postgres, lakefs, gateway, the CU manager) keep do-not-disrupt instead.
+#
+# agent-service is special: at numOfPods <= 1 it is a stateful singleton and keeps
+# do-not-disrupt (set in agent-service-deployment.yaml), so it is NOT listed here.
+# At numOfPods > 1, session-affinity routing makes its replicas evictable, so it is
+# appended to the PDB list below (maxUnavailable 1) and the annotation is dropped.
+{{- $agentPods := int (.Values.agentService.numOfPods | default 1) -}}
+{{- $pdbServices := list .Values.webserver.name .Values.accessControlService.name .Values.configService.name .Values.fileService.name .Values.litellm.name .Values.workflowCompilingService.name -}}
+{{- if gt $agentPods 1 }}
+{{- $pdbServices = append $pdbServices .Values.agentService.name }}
+{{- end }}
+{{- range $svc := $pdbServices }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

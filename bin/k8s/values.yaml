@@ -265,14 +265,19 @@ accessControlService:
 agentService:
   enabled: true
   name: agent-service
-  # MUST stay 1. Agents are held in memory per pod (server.ts `agentStore`), the ReAct
-  # run executes on the pod the /react WebSocket lands on, and broadcastToAgent only
-  # reaches sockets on that same pod. The gateway consistent-hash is keyed on a header the
-  # browser WebSocket cannot set, so it does NOT pin the WS — with >1 replica the run pod
-  # and the REST-control pod diverge (stop/clear/checkout hit the wrong pod, multi-tab
-  # streaming breaks). Running multiple replicas safely requires cross-pod coordination
-  # (shared pub/sub + run registry), which does not exist yet.
+  # Safe to scale >1. Agents are held in memory per pod (server.ts `agentStore`) and the
+  # ReAct run executes on the pod the /react WebSocket lands on, so all requests for a
+  # browser session MUST reach the same pod. That stickiness is provided by a gateway
+  # session cookie (agent-service-backend-traffic-policy.yaml) which — unlike a header —
+  # is replayed on the WS upgrade too, so the run pod and the REST-control pod stay in
+  # sync. At numOfPods > 1 the chart also swaps do-not-disrupt for a PDB (see
+  # agent-service-deployment.yaml / app-service-pdbs.yaml). Caveat: affinity is per
+  # browser session, so the rare case of the SAME agent driven from two different
+  # browsers at once can split across pods (last-writer-wins on react_steps in Postgres).
   numOfPods: 1
+  # TTL (Max-Age) of the gateway-generated affinity cookie; must outlast a typical agent
+  # session and match the Envoy duration regex (e.g. 1h, 3600s). Used by the BackendTrafficPolicy.
+  affinityCookieTtl: "1h"
   imageName: texera-agent-service
   service:
     type: ClusterIP
