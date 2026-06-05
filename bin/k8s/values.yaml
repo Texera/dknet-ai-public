@@ -311,10 +311,20 @@ agentService:
 bioMcpService:
   enabled: true
   name: bio-mcp-service
+  # Safe to scale >1. MCP sessions are held in memory per pod, so the Service uses ClientIP
+  # affinity (bio-mcp-service-service.yaml) to pin each agent-service pod to one bio-mcp pod,
+  # and agent-service re-initializes the session if a pod restarts (RemoteMcpToolRegistry
+  # recovery). At >1 a PDB is added (app-service-pdbs.yaml). Distribution is per agent-service
+  # pod, so throughput scales as agent-service scales.
   numOfPods: 1
+  # ClientIP affinity timeout (seconds): how long a pod stays pinned after its last request.
+  # Longer than a typical idle gap so a session isn't re-pinned (and re-initialized) needlessly.
+  sessionAffinityTimeoutSeconds: 10800
   imageName: texera-bio-mcp-service
-  # Bun.serve idleTimeout (seconds). Bun's default 10s tore down long MCP SSE streams /
-  # slow PubMed searches -> "MCP session not found". 255 is Bun's max; 0 disables.
+  # Bun.serve idleTimeout (seconds). Bun's default 10s tears down slow in-flight tool calls
+  # (PubMed can exceed 10s) and long-idle MCP SSE streams mid-flight. 255 is Bun's max; 0
+  # disables. (Note: this does NOT cause "MCP session not found" — that's a dropped session,
+  # handled by agent-service session recovery + the ClientIP affinity above.)
   idleTimeoutSeconds: 255
   service:
     type: ClusterIP
