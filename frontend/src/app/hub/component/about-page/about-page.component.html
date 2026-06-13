@@ -216,6 +216,28 @@
             </div>
           </ng-template>
         </div>
+
+        <!-- Tutorial videos surfaced right under the primary CTA: an embedded
+             YouTube playlist preview so visitors can watch without leaving. -->
+        <div class="hero-tutorial">
+          <p class="hero-tutorial-label">Watch the tutorial videos</p>
+          <div class="hero-video">
+            <iframe
+              src="https://www.youtube.com/embed/videoseries?list=PLArcTXMmhvqphW9ykn52csscYKOk6E2JY"
+              title="dkNET-AI tutorial videos"
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen></iframe>
+          </div>
+          <a
+            class="btn btn--ghost hero-tutorial-btn"
+            href="https://www.youtube.com/playlist?list=PLArcTXMmhvqphW9ykn52csscYKOk6E2JY"
+            target="_blank"
+            rel="noopener">
+            View full playlist on YouTube →
+          </a>
+        </div>
       </div>
 
       <div
@@ -285,13 +307,12 @@
         #reveal
         class="reveal cta-inner">
         <h2 class="cta-title">Build your next data science and AI project on dkNET-AI</h2>
-        <a
+        <button
+          type="button"
           class="btn btn--primary btn--lg"
-          href="https://www.youtube.com/playlist?list=PLArcTXMmhvqphW9ykn52csscYKOk6E2JY"
-          target="_blank"
-          rel="noopener">
-          Tutorial Videos
-        </a>
+          (click)="getStarted()">
+          Get started
+        </button>
         <p class="cta-powered">
           Powered by
           <a
