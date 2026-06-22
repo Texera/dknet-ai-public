@@ -218,6 +218,18 @@
           nzType="info-circle"></span>
         <span>About</span>
       </li>
+
+      <li
+        *ngIf="isLogin"
+        nz-menu-item
+        nz-tooltip
+        nzTooltipPlacement="right"
+        [routerLink]="DASHBOARD_USER_FEEDBACK">
+        <span
+          nz-icon
+          nzType="message"></span>
+        <span>Feedback</span>
+      </li>
     </ul>
     <a
       class="sider-attribution"

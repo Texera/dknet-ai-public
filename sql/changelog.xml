@@ -24,6 +24,11 @@
     xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
 
+    <!-- Add feedback table -->
+    <changeSet id="25" author="arisheh">
+        <sqlFile path="sql/updates/25.sql"/>
+    </changeSet>
+
     <!-- example changeSet
     <changeSet id="1" author="author">
         <sqlFile path="sql/updates/1.sql"/>

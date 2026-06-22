@@ -45,6 +45,7 @@ export const DASHBOARD_USER_DATASET_CREATE = `${DASHBOARD_USER_DATASET}/create`;
 export const DASHBOARD_USER_COMPUTING_UNIT = `${DASHBOARD_USER}/compute`;
 export const DASHBOARD_USER_QUOTA = `${DASHBOARD_USER}/quota`;
 export const DASHBOARD_USER_DISCUSSION = `${DASHBOARD_USER}/discussion`;
+export const DASHBOARD_USER_FEEDBACK = `${DASHBOARD_USER}/feedback`;
 
 export const DASHBOARD_ADMIN = `${DASHBOARD}/admin`;
 export const DASHBOARD_ADMIN_USER = `${DASHBOARD_ADMIN}/user`;
