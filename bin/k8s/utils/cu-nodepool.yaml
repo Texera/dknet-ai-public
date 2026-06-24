@@ -1,0 +1,102 @@
+# Dedicated Karpenter NodePool for on-demand CU pods.
+#
+# WHY THIS EXISTS
+# ---------------
+# CU pods (namespace texera-workflow-computing-unit-pool) are *bare* pods — the
+# cu-manager creates them with no Deployment/StatefulSet behind them (see
+# KubernetesClient.createPod). So if Karpenter evicts one, nothing recreates it:
+# the CU is permanently gone (often leaving a "zombie" DB row that still shows
+# RUNNING). The EKS Auto Mode default `general-purpose` pool runs
+# consolidationPolicy: WhenEmptyOrUnderutilized, so ~30s after a node looks
+# underutilized Karpenter evicts its pods to repack — which mass-killed live
+# student CUs during the 2026-06-24 class burst.
+#
+# Patching the `general-purpose` pool to WhenEmpty does NOT hold: it is
+# EKS-managed (metadata.labels app.kubernetes.io/managed-by=eks) and Auto Mode
+# reconciles the edit back to WhenEmptyOrUnderutilized within ~30 min.
+#
+# THE FIX
+# -------
+# Give CUs their own NON-EKS-managed NodePool (like `core-services`) so its
+# disruption policy actually persists, and set consolidationPolicy: WhenEmpty.
+# Karpenter then never evicts a running CU to repack an underutilized node,
+# while EMPTY CU nodes still scale down normally (no orphaned EC2 instances).
+#
+# We deliberately do NOT put a karpenter.sh/do-not-disrupt annotation on CU pods
+# (see KubernetesClient.createPod): that annotation blocks empty-node scaledown
+# and expiry too, which is exactly what pinned nodes / leaked EC2 instances in a
+# past incident. WhenEmpty gives the protection without that side effect.
+#
+# CU pods land here via a nodeSelector + toleration set by the cu-manager
+# (KUBERNETES_COMPUTE_UNIT_NODE_SELECTOR_LABEL / _VALUE / _TOLERATION_KEY in
+# override-eks-uci-oit.yaml). The warm-pool placeholder and the prepuller
+# DaemonSet must also reach this pool (the placeholder via nodeSelector+toleration
+# in values, the prepuller already tolerates all taints via operator: Exists).
+#
+# HOW TO APPLY (standalone, like the other bin/k8s/utils manifests)
+#   kubectl --context admin@dknet.us-west-1.eksctl.io apply -f bin/k8s/utils/cu-nodepool.yaml
+# Verify:
+#   kubectl get nodepool cu-pool -o jsonpath='{.spec.disruption.consolidationPolicy}'  # -> WhenEmpty
+#
+# NOTE: nodeClassRef points at the EKS Auto Mode `default` NodeClass (same as
+# core-services). This pool is OURS (not managed-by=eks), so its settings persist.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: cu-pool
+spec:
+  disruption:
+    # Only reclaim a CU node once it is completely empty — never evict a running
+    # CU to repack. This is the whole point of the pool.
+    consolidationPolicy: WhenEmpty
+    # How long a node must sit empty before removal. Long enough to avoid thrash
+    # while CUs churn (a freed node is likely to receive the next CU); short
+    # enough to not leak idle nodes. The warm pool covers cold-start latency.
+    consolidateAfter: 2m
+    budgets:
+      - nodes: "10%"
+  template:
+    metadata:
+      labels:
+        # CU pods select this via nodeSelector (KUBERNETES_COMPUTE_UNIT_NODE_SELECTOR_*).
+        texera.io/node-role: computing-unit
+    spec:
+      # Bounded node rotation. With WhenEmpty + no do-not-disrupt, a node that
+      # always hosts >=1 CU never goes empty; expiry guarantees it still rotates
+      # (for patching) at most every 14 days, forcibly draining CUs then. Set
+      # long so it rarely interrupts an active session (camp sessions are hours).
+      expireAfter: 336h
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: default
+      taints:
+        # Keeps everything except CU pods (and the warm placeholder / prepuller,
+        # which explicitly tolerate it) off these nodes. Toleration uses
+        # operator: Exists, so the taint needs no value.
+        - key: texera.io/computing-unit
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]          # CU master image is amd64-only
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-1a", "us-west-1c"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          # m-family general compute; Karpenter picks the cheapest that fits the
+          # pending CUs. 2xlarge–4xlarge packs several 4vCPU/16Gi CUs per node.
+          values:
+            - m6a.2xlarge
+            - m7a.2xlarge
+            - m5.2xlarge
+            - m6a.4xlarge
+            - m7a.4xlarge
+            - m5.4xlarge

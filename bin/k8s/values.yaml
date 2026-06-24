@@ -503,6 +503,14 @@ computingUnitWarmPool:
   resources:
     cpu: "1"
     memory: "2Gi"
+  # Node placement for the warm placeholders. Must match where CU pods land so a
+  # preempting CU can actually reuse the warm node. Defaults to amd64 only (the
+  # CU image is amd64-only). On a deployment that pins CUs to a dedicated CU
+  # NodePool (bin/k8s/utils/cu-nodepool.yaml), add that pool's label here and the
+  # matching toleration below — see override-eks-uci-oit.yaml.
+  nodeSelector:
+    kubernetes.io/arch: amd64
+  tolerations: []
 
 # CloudBioMapper Go service (Texera/cloudmapper). When enabled, deploys
 # the Go REST service that provisions EC2 clusters for sequence alignment

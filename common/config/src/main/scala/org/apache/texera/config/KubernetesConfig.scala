@@ -66,4 +66,14 @@ object KubernetesConfig {
 
   // GPU resource key used directly in Kubernetes resource specifications
   val gpuResourceKey: String = conf.getString("kubernetes.computing-unit-gpu-resource-key")
+
+  // Optional placement of CU pods onto a dedicated, tainted Karpenter NodePool
+  // (see bin/k8s/utils/cu-nodepool.yaml). Empty => no nodeSelector/toleration,
+  // i.e. schedule on the default pool (local/dev).
+  val computeUnitNodeSelectorLabel: String =
+    conf.getString("kubernetes.compute-unit-node-selector-label")
+  val computeUnitNodeSelectorValue: String =
+    conf.getString("kubernetes.compute-unit-node-selector-value")
+  val computeUnitTolerationKey: String =
+    conf.getString("kubernetes.compute-unit-toleration-key")
 }
