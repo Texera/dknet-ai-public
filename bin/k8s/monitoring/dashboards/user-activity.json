@@ -75,7 +75,7 @@
       "id": 11,
       "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 5},
-      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, count(*) AS total_cus, count(*) FILTER (WHERE c.terminate_time IS NULL) AS active_cus FROM texera_db.workflow_computing_unit c JOIN texera_db.\"user\" u ON u.uid = c.uid GROUP BY u.email ORDER BY total_cus DESC LIMIT 30"}],
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, count(*) AS total_cus, count(*) FILTER (WHERE c.terminate_time IS NULL) AS active_cus FROM texera_db.workflow_computing_unit c JOIN texera_db.\"user\" u ON u.uid = c.uid GROUP BY u.email ORDER BY active_cus DESC, total_cus DESC LIMIT 30"}],
       "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
     },
     {

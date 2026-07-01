@@ -133,6 +133,37 @@ object KubernetesClient {
       specBuilder.withRuntimeClassName("nvidia")
     }
 
+    // Pin CU pods to the dedicated Karpenter CU NodePool when configured.
+    //
+    // The CU NodePool (bin/k8s/utils/cu-nodepool.yaml) is non-EKS-managed and
+    // uses consolidationPolicy: WhenEmpty, so Karpenter never evicts a running
+    // CU to repack an underutilized node (the cause of the 2026-06-24 mass
+    // CU-eviction incident), while empty CU nodes still scale down normally.
+    // We deliberately do NOT add a karpenter.sh/do-not-disrupt annotation: that
+    // would also block empty-node scaledown/expiry and can pin nodes forever
+    // (orphaned EC2). WhenEmpty gives the protection without that side effect.
+    //
+    // All settings empty (default) => no nodeSelector/toleration, so CU pods
+    // schedule on the cluster's default pool. Required for local/dev clusters
+    // that have no dedicated CU NodePool.
+    if (
+      KubernetesConfig.computeUnitNodeSelectorLabel.nonEmpty &&
+      KubernetesConfig.computeUnitNodeSelectorValue.nonEmpty
+    ) {
+      specBuilder.addToNodeSelector(
+        KubernetesConfig.computeUnitNodeSelectorLabel,
+        KubernetesConfig.computeUnitNodeSelectorValue
+      )
+    }
+    if (KubernetesConfig.computeUnitTolerationKey.nonEmpty) {
+      specBuilder
+        .addNewToleration()
+        .withKey(KubernetesConfig.computeUnitTolerationKey)
+        .withOperator("Exists")
+        .withEffect("NoSchedule")
+        .endToleration()
+    }
+
     val containerBuilder = specBuilder
       .addNewContainer()
       .withName("computing-unit-master")

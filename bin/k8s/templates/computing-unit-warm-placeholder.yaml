@@ -47,10 +47,19 @@ spec:
     spec:
       priorityClassName: {{ .Release.Name }}-cu-warm-placeholder
       terminationGracePeriodSeconds: 0
-      # Match the prepuller DaemonSet's node target so the warm node has the
-      # CU image cached when the placeholder gets evicted.
+      # Match where CU pods actually land so the warm node is reusable by a
+      # preempting CU (and has the CU image cached by the prepuller). Defaults to
+      # amd64; on a deployment that pins CUs to the dedicated CU NodePool, set
+      # nodeSelector + tolerations here to that pool's label/taint so the warm
+      # node is created IN that pool (see values.yaml / override-eks-uci-oit.yaml).
+      {{- with .Values.computingUnitWarmPool.nodeSelector }}
       nodeSelector:
-        kubernetes.io/arch: amd64
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.computingUnitWarmPool.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
