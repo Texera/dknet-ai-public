@@ -49,7 +49,7 @@ class ConfigResource {
       // yet the frontend needs this flag to decide whether to show the
       // registration-request form (and notify admins). Keeping it only on
       // /user-system (as of #5305) made the form unreachable for exactly the
-      // users it targets.
+      // users it targets. Upstream #5572 makes the same pre-login move.
       "inviteOnly" -> UserSystemConfig.inviteOnly
     )
 

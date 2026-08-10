@@ -19,7 +19,7 @@ texera:
   # Container image registry and tag for all Texera services
   # Override these to use a different registry or version
   imageRegistry: docker.io/apache
-  imageTag: 1.1.0-incubating
+  imageTag: 1.2.0-incubating
 
 global:
   # Required by Bitnami sub-charts (postgresql) to allow custom images
@@ -283,9 +283,6 @@ agentService:
     type: ClusterIP
     port: 3001
   env:
-    # Authenticates the agent service to the in-cluster LLM gateway
-    # (access-control-service / LiteLLM), not to the upstream provider.
-    llmApiKey: "dummy"
     mcpRequestTimeoutMs: 30000
     # Agent behavior tuning — override the image's built-in defaults without rebuilding.
     # Leave a value blank to fall back to the built-in default.

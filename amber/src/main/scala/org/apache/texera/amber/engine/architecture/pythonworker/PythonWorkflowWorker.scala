@@ -216,7 +216,8 @@ class PythonWorkflowWorker(
         StorageConfig.s3Endpoint,
         StorageConfig.s3Region,
         StorageConfig.s3Username,
-        StorageConfig.s3Password
+        StorageConfig.s3Password,
+        workerConfig.largeBinaryBaseUri
       ),
       None,
       extraEnv: _*
