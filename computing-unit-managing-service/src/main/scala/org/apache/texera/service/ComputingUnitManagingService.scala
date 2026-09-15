@@ -30,6 +30,7 @@ import org.apache.texera.dao.SqlServer
 import org.apache.texera.service.resource.{
   ComputingUnitAccessResource,
   ComputingUnitManagingResource,
+  CuratedImageResource,
   HealthCheckResource
 }
 import org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature
@@ -68,6 +69,7 @@ class ComputingUnitManagingService extends Application[ComputingUnitManagingServ
 
     environment.jersey().register(new ComputingUnitManagingResource)
     environment.jersey().register(new ComputingUnitAccessResource)
+    environment.jersey().register(new CuratedImageResource)
 
     // Route request logs through SLF4J, controlled by TEXERA_SERVICE_LOG_LEVEL
     RequestLoggingFilter.register(environment.getApplicationContext)

@@ -76,4 +76,9 @@ object KubernetesConfig {
     conf.getString("kubernetes.compute-unit-node-selector-value")
   val computeUnitTolerationKey: String =
     conf.getString("kubernetes.compute-unit-toleration-key")
+
+  // See kubernetes.conf on why the uid has to be given alongside runAsNonRoot.
+  val computingUnitRunAsNonRoot: Boolean =
+    conf.getBoolean("kubernetes.computing-unit-run-as-non-root")
+  val computingUnitRunAsUser: Long = conf.getLong("kubernetes.computing-unit-run-as-user")
 }

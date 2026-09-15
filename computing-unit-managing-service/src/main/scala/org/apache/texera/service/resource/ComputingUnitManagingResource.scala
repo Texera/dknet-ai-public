@@ -158,7 +158,9 @@ object ComputingUnitManagingResource {
       awsAccessKeyId: Option[String] = None,
       awsSecretAccessKey: Option[String] = None,
       awsRegion: Option[String] = None,
-      awsInstanceType: Option[String] = None
+      awsInstanceType: Option[String] = None,
+      /** A curated image to start this unit from, instead of the deployment's own. */
+      iid: Option[Int] = None
   )
 
   case class WorkflowComputingUnitTerminateParams(
@@ -545,6 +547,18 @@ class ComputingUnitManagingResource {
         throw new ForbiddenException(s"Unsupported computing-unit type: ${param.unitType}")
     }
 
+    // Resolved before anything is written. Starting from an image that is not ready would
+    // leave a computing-unit row behind that can never run.
+    val curatedImage: Option[String] = param.iid.map { iid =>
+      CuratedImageResource
+        .readyImageFor(iid)
+        .getOrElse(
+          throw new ForbiddenException(
+            s"Image $iid is not available. It must exist and have passed its check."
+          )
+        )
+    }
+
     withTransaction(context) { ctx =>
       val wcDao = new WorkflowComputingUnitDao(ctx.configuration())
 
@@ -567,6 +581,12 @@ class ComputingUnitManagingResource {
               "gpuLimit" -> param.gpuLimit,
               "jvmMemorySize" -> param.jvmMemorySize,
               "shmSize" -> param.shmSize,
+              // The name is stored with the id because a curated image can be removed
+              // while a unit started from it is still up, and "what is this running?"
+              // should still have an answer then.
+              "iid" -> param.iid,
+              "imageName" -> param.iid.flatMap(CuratedImageResource.nameOf),
+              "curatedImage" -> curatedImage,
               "nodeAddresses" -> Json.arr() // filled in later
             )
           )
@@ -657,7 +677,8 @@ class ComputingUnitManagingResource {
               // token; it receives a per-execution token in the execute request instead.
               EnvironmentalVariable.ENV_JAVA_OPTS -> s"$jvmAddOpens -Xmx${param.jvmMemorySize}"
             ),
-            Some(param.shmSize)
+            Some(param.shmSize),
+            curatedImage
           )
 
         } catch {
