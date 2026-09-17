@@ -65,8 +65,24 @@ class ImagePrepullClientSpec extends AnyFlatSpec with Matchers {
   // A computing-unit pod declares no tolerations, so a tainted node is one no unit can
   // land on. Tolerating everything put multi-gigabyte images on control-plane nodes.
   it should "schedule exactly where a computing unit can, and no wider" in {
-    val podSpec = prepullDaemonSet(7, PinnedRef).getSpec.getTemplate.getSpec
+    val podSpec = prepullDaemonSet(7, PinnedRef, None, None).getSpec.getTemplate.getSpec
     Option(podSpec.getTolerations).map(_.asScala.toList).getOrElse(Nil) shouldBe Nil
+    Option(podSpec.getNodeSelector).map(_.asScala.toMap).getOrElse(Map.empty) shouldBe empty
+  }
+
+  // dknet pins computing units to a dedicated, tainted pool; a pre-pull that ignored that
+  // would fill shared nodes with images no unit there runs, and miss the nodes that do.
+  it should "follow computing units onto a dedicated, tainted node pool" in {
+    val podSpec = prepullDaemonSet(
+      7,
+      PinnedRef,
+      Some("texera.io/node-role" -> "computing-unit"),
+      Some("texera.io/computing-unit")
+    ).getSpec.getTemplate.getSpec
+    podSpec.getNodeSelector.asScala.toMap shouldBe Map("texera.io/node-role" -> "computing-unit")
+    val tolerations = podSpec.getTolerations.asScala.toList
+    tolerations.map(t => (t.getKey, t.getOperator, t.getEffect)) shouldBe
+      List(("texera.io/computing-unit", "Exists", "NoSchedule"))
   }
 
   // The pool namespace's ResourceQuota refuses a pod whose init container omits requests,

@@ -23,7 +23,7 @@ import com.typesafe.scalalogging.LazyLogging
 import io.fabric8.kubernetes.api.model.apps.{DaemonSet, DaemonSetBuilder}
 import io.fabric8.kubernetes.api.model.{DeletionPropagation, Quantity, ResourceRequirementsBuilder}
 import io.fabric8.kubernetes.client.KubernetesClientBuilder
-import org.apache.texera.config.CuratedImageConfig
+import org.apache.texera.config.{CuratedImageConfig, KubernetesConfig}
 
 import scala.jdk.CollectionConverters._
 
@@ -163,7 +163,26 @@ object ImagePrepullClient extends LazyLogging {
       .flatMap(labels => Option(labels.get(ImageLabel)))
       .flatMap(value => scala.util.Try(value.toInt).toOption)
 
-  private[service] def prepullDaemonSet(iid: Int, pinnedRef: String): DaemonSet = {
+  /** Where computing-unit pods are pinned (KubernetesClient.createPod), if anywhere. */
+  private def configuredNodeSelector: Option[(String, String)] =
+    if (
+      KubernetesConfig.computeUnitNodeSelectorLabel.nonEmpty &&
+      KubernetesConfig.computeUnitNodeSelectorValue.nonEmpty
+    )
+      Some(
+        KubernetesConfig.computeUnitNodeSelectorLabel -> KubernetesConfig.computeUnitNodeSelectorValue
+      )
+    else None
+
+  private def configuredTolerationKey: Option[String] =
+    Option(KubernetesConfig.computeUnitTolerationKey).filter(_.nonEmpty)
+
+  private[service] def prepullDaemonSet(
+      iid: Int,
+      pinnedRef: String,
+      nodeSelector: Option[(String, String)] = configuredNodeSelector,
+      tolerationKey: Option[String] = configuredTolerationKey
+  ): DaemonSet = {
     val name = CuratedImageConfig.prepullName(iid)
     val labels = Map("app" -> name, OwnerLabel -> "true", ImageLabel -> iid.toString).asJava
 
@@ -209,8 +228,19 @@ object ImagePrepullClient extends LazyLogging {
       .withLabels(labels)
       .endMetadata()
       .withNewSpec()
-      // No tolerations: computing-unit pods declare none, so a tainted node is one no unit
-      // can be scheduled onto.
+      // Exactly the placement computing-unit pods get (dknet pins them to a dedicated,
+      // tainted node pool): the same nodeSelector and the same single toleration, so the
+      // image lands where units run and nowhere wider.
+      .withNodeSelector(nodeSelector.toMap.asJava)
+      .withTolerations(
+        tolerationKey.toList.map { key =>
+          new io.fabric8.kubernetes.api.model.TolerationBuilder()
+            .withKey(key)
+            .withOperator("Exists")
+            .withEffect("NoSchedule")
+            .build()
+        }.asJava
+      )
       .withInitContainers(
         new io.fabric8.kubernetes.api.model.ContainerBuilder()
           .withName("prepuller")
