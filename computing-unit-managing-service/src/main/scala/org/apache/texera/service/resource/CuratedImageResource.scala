@@ -181,16 +181,36 @@ object CuratedImageResource extends LazyLogging {
     * The image a computing unit should start from, or None if it cannot be started from.
     * No ownership check: these are offered to every user by design.
     */
-  def readyImageFor(iid: Int): Option[String] = {
+  /**
+    * What a unit started from this image would run, or None if it cannot be started from.
+    *
+    * Separate from the lookup so the disabled case can be stated in a test: the flag is a
+    * val read once at class load, so a test cannot turn the feature off around a call.
+    */
+  private[service] def startableRef(
+      enabled: Boolean,
+      status: String,
+      sourceRef: String,
+      sourceDigest: String
+  ): Option[String] =
     // A disabled deployment starts nothing, including from a row left behind by an
     // earlier enabled run.
+    if (!enabled) None
+    else if (status != Status.Ready) None
+    else pinnedRefOf(sourceRef, sourceDigest)
+
+  def readyImageFor(iid: Int): Option[String] = {
+    // Checked here too, which the rule below repeats: it makes the query pointless.
     if (!CuratedImageConfig.enabled) return None
-    val record = Option(
+    Option(
       context.select(STATUS, SOURCE_REF, SOURCE_DIGEST).from(CU_IMAGE).where(IID.eq(iid)).fetchOne()
-    )
-    record.flatMap { r =>
-      if (r.get(STATUS) != Status.Ready) None
-      else pinnedRefOf(r.get(SOURCE_REF), r.get(SOURCE_DIGEST))
+    ).flatMap { r =>
+      startableRef(
+        CuratedImageConfig.enabled,
+        r.get(STATUS),
+        r.get(SOURCE_REF),
+        r.get(SOURCE_DIGEST)
+      )
     }
   }
 
@@ -573,7 +593,10 @@ class CuratedImageResource extends LazyLogging {
           .get(IID)
           .intValue()
       } catch {
-        case _: org.jooq.exception.IntegrityConstraintViolationException =>
+        // This jOOQ predates IntegrityConstraintViolationException, so match the SQLSTATE
+        // class for integrity constraint violations (23xxx) instead.
+        case e: org.jooq.exception.DataAccessException
+            if Option(e.sqlState()).exists(_.startsWith("23")) =>
           throw new BadRequestException(
             s"'$sourceRef' or the name '$name' was registered a moment ago by someone " +
               "else. Reload the list -- the image is already there."

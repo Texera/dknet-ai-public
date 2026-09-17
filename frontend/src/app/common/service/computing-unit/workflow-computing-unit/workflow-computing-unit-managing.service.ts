@@ -88,9 +88,12 @@ export class WorkflowComputingUnitManagingService {
     awsAccessKeyId?: string,
     awsSecretAccessKey?: string,
     awsRegion?: string,
-    awsInstanceType?: string
+    awsInstanceType?: string,
+    iid?: number
   ): Observable<DashboardWorkflowComputingUnit> {
-    const body: Record<string, string | undefined> = {
+    // iid is left out when no curated image was chosen, so the unit runs the deployment's
+    // own image exactly as before.
+    const body: Record<string, string | number | undefined> = {
       name,
       cpuLimit,
       memoryLimit,
@@ -103,6 +106,7 @@ export class WorkflowComputingUnitManagingService {
       awsSecretAccessKey,
       awsRegion,
       awsInstanceType,
+      iid,
     };
 
     return this.http
@@ -127,9 +131,24 @@ export class WorkflowComputingUnitManagingService {
     memoryLimit: string,
     gpuLimit: string,
     jvmMemorySize: string,
-    shmSize: string
+    shmSize: string,
+    iid?: number
   ): Observable<DashboardWorkflowComputingUnit> {
-    return this.createComputingUnit(name, cpuLimit, memoryLimit, gpuLimit, jvmMemorySize, shmSize, "", "kubernetes");
+    return this.createComputingUnit(
+      name,
+      cpuLimit,
+      memoryLimit,
+      gpuLimit,
+      jvmMemorySize,
+      shmSize,
+      "",
+      "kubernetes",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      iid
+    );
   }
 
   /**

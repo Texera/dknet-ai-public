@@ -52,7 +52,11 @@ import org.apache.texera.service.util.{
   InsufficientComputingUnitQuota,
   KubernetesClient
 }
-import org.apache.texera.dao.jooq.generated.Tables.{OPERATOR_PORT_CACHE, OPERATOR_PORT_EXECUTIONS, WORKFLOW_EXECUTIONS}
+import org.apache.texera.dao.jooq.generated.Tables.{
+  OPERATOR_PORT_CACHE,
+  OPERATOR_PORT_EXECUTIONS,
+  WORKFLOW_EXECUTIONS
+}
 import org.jooq.{DSLContext, EnumType}
 import org.jooq.impl.SQLDataType
 import play.api.libs.json._
@@ -986,8 +990,10 @@ class ComputingUnitManagingResource {
 
         case WorkflowComputingUnitTypeEnum.aws =>
           // AWS requires credentials to terminate the instance
-          if (param == null || param.awsAccessKeyId.forall(_.trim.isEmpty) ||
-              param.awsSecretAccessKey.forall(_.trim.isEmpty)) {
+          if (
+            param == null || param.awsAccessKeyId.forall(_.trim.isEmpty) ||
+            param.awsSecretAccessKey.forall(_.trim.isEmpty)
+          ) {
             throw new ForbiddenException(
               "AWS credentials are required to terminate an AWS computing unit"
             )

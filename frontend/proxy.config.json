@@ -5,7 +5,7 @@
     "changeOrigin": true,
     "ws": true
   },
-"/api/models": {
+  "/api/models": {
     "target": "http://localhost:9096",
     "secure": false,
     "changeOrigin": true
@@ -37,6 +37,11 @@
   },
   "/api/config/**": {
     "target": "http://localhost:9094",
+    "secure": false,
+    "changeOrigin": true
+  },
+  "/api/cu-image": {
+    "target": "http://localhost:8888",
     "secure": false,
     "changeOrigin": true
   },

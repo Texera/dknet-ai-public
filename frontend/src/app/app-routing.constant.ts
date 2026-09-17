@@ -52,5 +52,6 @@ export const DASHBOARD_ADMIN_USER = `${DASHBOARD_ADMIN}/user`;
 export const DASHBOARD_ADMIN_GMAIL = `${DASHBOARD_ADMIN}/gmail`;
 export const DASHBOARD_ADMIN_EXECUTION = `${DASHBOARD_ADMIN}/execution`;
 export const DASHBOARD_ADMIN_SETTINGS = `${DASHBOARD_ADMIN}/settings`;
+export const DASHBOARD_ADMIN_CU_IMAGE = `${DASHBOARD_ADMIN}/cu-image`;
 
 export const DASHBOARD_SEARCH = `${DASHBOARD}/search`;

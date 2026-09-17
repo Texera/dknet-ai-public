@@ -374,7 +374,9 @@ litellm:
 
 # Images an administrator registers, which a computing unit can then be started from.
 curatedImages:
-  # Off until the UI to manage these ships.
+  # dknet: off by default so a deployment that does not set it (e.g. production's
+  # override-eks-uci-oit.yaml) is unchanged. Before turning it on, apply
+  # sql/updates/50.sql (the cu_image table) to that deployment's database.
   enabled: false
   prepull:
     # Pull every ready image onto every node, so the first unit there does not wait for it.

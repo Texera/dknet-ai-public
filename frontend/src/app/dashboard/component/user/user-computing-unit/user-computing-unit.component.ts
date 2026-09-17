@@ -55,6 +55,8 @@ import { NzListComponent } from "ng-zorro-antd/list";
 import { UserComputingUnitListItemComponent } from "./user-computing-unit-list-item/user-computing-unit-list-item.component";
 import { NzSelectComponent, NzOptionComponent } from "ng-zorro-antd/select";
 import { FormsModule } from "@angular/forms";
+import { HttpErrorResponse } from "@angular/common/http";
+import { CuImage, CuImageService, isStartable } from "../../../service/admin/cu-image/cu-image.service";
 import { NgFor, NgIf, TitleCasePipe } from "@angular/common";
 import { NzInputDirective } from "ng-zorro-antd/input";
 import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
@@ -62,6 +64,9 @@ import { NzSliderComponent } from "ng-zorro-antd/slider";
 import { NzAlertComponent } from "ng-zorro-antd/alert";
 import { NzProgressComponent } from "ng-zorro-antd/progress";
 import { NzStepsComponent, NzStepComponent } from "ng-zorro-antd/steps";
+
+/** The deployment's own image. Never a real iid, which the database numbers from 1. */
+const DEPLOYMENT_IMAGE = 0;
 
 @UntilDestroy()
 @Component({
@@ -110,6 +115,11 @@ export class UserComputingUnitComponent implements OnInit {
 
   // variables for creating a computing unit
   addComputeUnitModalVisible = false;
+  /** Ready curated images. Empty when none are registered, or the feature is off. */
+  curatedImages: CuImage[] = [];
+  /** DEPLOYMENT_IMAGE means the deployment's own image, which is the default. */
+  selectedImageId: number = DEPLOYMENT_IMAGE;
+  readonly DEPLOYMENT_IMAGE = DEPLOYMENT_IMAGE;
   // Advanced settings disclosure inside the create modal — collapsed by default,
   // houses the shared-memory and JVM-heap knobs most users never touch.
   showAdvancedSettings = false;
@@ -117,14 +127,7 @@ export class UserComputingUnitComponent implements OnInit {
   // Phases come from the backend's /creation-status endpoint. The dashboard
   // page does not open a WebSocket to the new CU (workflow page does that),
   // so the flow ends at "Ready".
-  readonly creationPhases = [
-    "Submitted",
-    "Scheduling",
-    "Pulling",
-    "Starting",
-    "Initializing",
-    "Ready",
-  ];
+  readonly creationPhases = ["Submitted", "Scheduling", "Pulling", "Starting", "Initializing", "Ready"];
   creationInProgress = false;
   creationFailed = false;
   creationCurrentPhase: string = "Submitted";
@@ -161,7 +164,8 @@ export class UserComputingUnitComponent implements OnInit {
     private userService: UserService,
     private computingUnitService: WorkflowComputingUnitManagingService,
     private computingUnitStatusService: ComputingUnitStatusService,
-    private computingUnitActionsService: ComputingUnitActionsService
+    private computingUnitActionsService: ComputingUnitActionsService,
+    private cuImageService: CuImageService
   ) {
     this.userService
       .userChanged()
@@ -258,6 +262,8 @@ export class UserComputingUnitComponent implements OnInit {
       jvmMemorySize: this.selectedJvmMemorySize,
       shmSize: `${this.shmSizeValue}${this.shmSizeUnit}`,
       localUri: this.localComputingUnitUri,
+      // Left out for the deployment's own image, so the request carries no image at all.
+      imageId: this.selectedImageId === DEPLOYMENT_IMAGE ? undefined : this.selectedImageId,
     };
 
     this.creationInProgress = true;
@@ -343,9 +349,37 @@ export class UserComputingUnitComponent implements OnInit {
     return this.gpuOptions.length > 1 || (this.gpuOptions.length === 1 && this.gpuOptions[0] !== "0");
   }
 
+  /**
+   * Read each time the dialog opens rather than once at init, so an image that became
+   * ready since page load appears, and one failed read does not hide the field for good.
+   *
+   * Readable by any signed-in user. A deployment with curated images off answers 503, and
+   * a user who never sees the dropdown gets exactly the previous behaviour.
+   */
+  private loadCuratedImages(): void {
+    this.cuImageService
+      .list()
+      .pipe(untilDestroyed(this))
+      .subscribe({
+        next: images => (this.curatedImages = images.filter(isStartable)),
+        error: (err: unknown) => {
+          // Without a list there is nothing to choose from, and the unit falls back to the
+          // deployment's image. Only 503 means the feature is off; anything else is worth
+          // saying, or the picker just vanishes.
+          this.curatedImages = [];
+          if (!(err instanceof HttpErrorResponse && err.status === 503)) {
+            this.notificationService.error(`Could not load the available images: ${extractErrorMessage(err)}`);
+          }
+        },
+      });
+  }
+
   showAddComputeUnitModalVisible(): void {
     this.resetCreationProgress();
     this.showAdvancedSettings = false;
+    // The image is chosen per unit, so a previous choice must not ride along.
+    this.selectedImageId = DEPLOYMENT_IMAGE;
+    this.loadCuratedImages();
     this.addComputeUnitModalVisible = true;
   }
 

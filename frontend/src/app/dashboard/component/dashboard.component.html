@@ -204,6 +204,17 @@
               nzType="edit"></span>
             <span>Settings</span>
           </li>
+          <li
+            nz-menu-item
+            nz-tooltip="Images a computing unit can be started from"
+            nzMatchRouter="true"
+            nzTooltipPlacement="right"
+            [routerLink]="DASHBOARD_ADMIN_CU_IMAGE">
+            <span
+              nz-icon
+              nzType="appstore"></span>
+            <span>CU Images</span>
+          </li>
         </ul>
       </li>
 
@@ -245,7 +256,9 @@
         class="sider-attribution-logo" />
       <span
         *ngIf="!isCollapsed"
-        class="sider-attribution-text">Powered by Apache Texera (Incubating)</span>
+        class="sider-attribution-text"
+        >Powered by Apache Texera (Incubating)</span
+      >
     </a>
     <span id="git-commit-id">Git hash: {{ gitCommitHash }}</span>
   </nz-sider>

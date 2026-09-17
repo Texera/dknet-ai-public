@@ -324,6 +324,32 @@
           </nz-select>
         </div>
 
+        <!-- Only when an administrator has curated something to choose. -->
+        <div
+          *ngIf="curatedImages.length > 0"
+          class="select-unit">
+          <span
+            >Image
+            <span
+              nz-icon
+              nzType="info-circle"
+              nz-tooltip="Chosen when the unit is created and fixed for its lifetime. Affects only this unit."></span>
+          </span>
+          <nz-select
+            class="image-selection"
+            [(ngModel)]="selectedImageId">
+            <nz-option
+              [nzValue]="DEPLOYMENT_IMAGE"
+              nzLabel="Default">
+            </nz-option>
+            <nz-option
+              *ngFor="let img of curatedImages"
+              [nzValue]="img.iid"
+              [nzLabel]="img.name">
+            </nz-option>
+          </nz-select>
+        </div>
+
         <div
           *ngIf="showGpuSelection()"
           class="select-unit">
@@ -540,22 +566,24 @@
 <!-- Template for AWS terminate credentials prompt -->
 <ng-template #awsTerminateContent>
   <p>Are you sure you want to terminate <strong>{{awsTerminateUnitName}}</strong>?</p>
-  <p style="color: #ff4d4f;"><strong>Warning:</strong> The EC2 instance will be terminated. All execution results will be lost.</p>
-  <div style="margin-top: 12px;">
-    <label style="display: block; margin-bottom: 4px; font-weight: 500;">AWS Access Key ID</label>
+  <p style="color: #ff4d4f">
+    <strong>Warning:</strong> The EC2 instance will be terminated. All execution results will be lost.
+  </p>
+  <div style="margin-top: 12px">
+    <label style="display: block; margin-bottom: 4px; font-weight: 500">AWS Access Key ID</label>
     <input
       nz-input
       type="password"
       placeholder="Enter Access Key ID"
       [(ngModel)]="terminateAwsAccessKeyId"
-      style="width: 100%; margin-bottom: 8px;" />
-    <label style="display: block; margin-bottom: 4px; font-weight: 500;">AWS Secret Access Key</label>
+      style="width: 100%; margin-bottom: 8px" />
+    <label style="display: block; margin-bottom: 4px; font-weight: 500">AWS Secret Access Key</label>
     <input
       nz-input
       type="password"
       placeholder="Enter Secret Access Key"
       [(ngModel)]="terminateAwsSecretAccessKey"
-      style="width: 100%;" />
+      style="width: 100%" />
   </div>
 </ng-template>
 

@@ -282,8 +282,6 @@ class CuratedImageResourceSpec extends AnyFlatSpec with Matchers {
     ImageValidationClient.sourceDigestFrom(log) shouldBe None
   }
 
-  // Off until the UI ships, so a deployment that has not opted in starts no unit from a
-  // curated image -- including from a row left behind if it was enabled and turned off.
   // The regression this guards: the digest was read from the first marker line, while the
   // image's own start command -- which its author controls -- is echoed earlier. An image
   // whose Cmd carries a newline and a marker of its own could pass the check and still
@@ -301,12 +299,49 @@ class CuratedImageResourceSpec extends AnyFlatSpec with Matchers {
       "sha256:1111111111111111111111111111111111111111111111111111111111111111"
   }
 
-  "the feature flag" should "be off unless a deployment turns it on" in {
-    CuratedImageConfig.enabled shouldBe false
+  private val ReadyDigest = "sha256:" + "a" * 64
+
+  // The guard this covers: a deployment that turned the feature off, or left a row behind
+  // from when it was on, must start no unit from a curated image. It was covered by a test
+  // that drove readyImageFor while the flag was off, which stopped being possible once the
+  // flag shipped on -- the flag is read once at class load, so a test cannot turn it off.
+  "an image" should "start nothing while the feature is off, ready or not" in {
+    CuratedImageResource.startableRef(
+      enabled = false,
+      status = "READY",
+      sourceRef = "owner/name:1.0",
+      sourceDigest = ReadyDigest
+    ) shouldBe None
   }
 
-  it should "start no unit from a curated image while it is off" in {
-    CuratedImageResource.readyImageFor(1) shouldBe None
+  it should "start nothing until its check has passed" in {
+    Seq("PENDING", "VALIDATING", "FAILED").foreach { status =>
+      withClue(s"$status: ") {
+        CuratedImageResource.startableRef(
+          enabled = true,
+          status = status,
+          sourceRef = "owner/name:1.0",
+          sourceDigest = ReadyDigest
+        ) shouldBe None
+      }
+    }
+  }
+
+  it should "run the digest its check resolved once it is ready" in {
+    CuratedImageResource
+      .startableRef(
+        enabled = true,
+        status = "READY",
+        sourceRef = "owner/name:1.0",
+        sourceDigest = ReadyDigest
+      )
+      .value shouldBe s"owner/name@$ReadyDigest"
+  }
+
+  // dknet keeps this off by default, so a deployment that has not applied the cu_image
+  // migration (sql/updates/50.sql) is unchanged until it opts in.
+  "the feature flag" should "be off unless a deployment turns it on" in {
+    CuratedImageConfig.enabled shouldBe false
   }
 
   // The states below are the ones a real cluster produces; the DeadlineExceeded shape was

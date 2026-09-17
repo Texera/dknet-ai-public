@@ -184,6 +184,7 @@ import { NzStepsModule } from "ng-zorro-antd/steps";
 import { ComputingUnitSelectionComponent } from "./workspace/component/power-button/computing-unit-selection.component";
 import { NzSliderModule } from "ng-zorro-antd/slider";
 import { AdminSettingsComponent } from "./dashboard/component/admin/settings/admin-settings.component";
+import { AdminCuImageComponent } from "./dashboard/component/admin/cu-image/admin-cu-image.component";
 import { FormlyRepeatDndComponent } from "./common/formly/repeat-dnd/repeat-dnd.component";
 import { NzInputNumberModule } from "ng-zorro-antd/input-number";
 import { NzGridModule } from "ng-zorro-antd/grid";
@@ -362,6 +363,7 @@ registerLocaleData(en);
     HubSearchResultComponent,
     ComputingUnitSelectionComponent,
     AdminSettingsComponent,
+    AdminCuImageComponent,
     RegistrationRequestModalComponent,
     MarkdownDescriptionComponent,
     UserComputingUnitComponent,
