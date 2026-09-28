@@ -21,6 +21,7 @@ package org.apache.texera.amber.engine.architecture.scheduling
 
 import org.apache.pekko.pattern.gracefulStop
 import com.twitter.util.{Duration => TwitterDuration, Future, JavaTimer, Return, Throw, Timer}
+import org.apache.texera.amber.core.WorkflowRuntimeException
 import org.apache.texera.amber.core.state.State
 import org.apache.texera.amber.core.storage.{DocumentFactory, VFSURIFactory}
 import org.apache.texera.amber.core.storage.VFSURIFactory.decodeURI
@@ -143,15 +144,13 @@ class RegionExecutionCoordinator(
     region.getOperators.foreach { op =>
       val opExecution = regionExecution.initOperatorExecution(op.id)
       // Cached regions do not create workers; synthesize operator-level metrics instead.
-      val outputMetrics = resourceConfig.portConfigs
-        .collect {
-          case (gpid, cfg: OutputPortConfig) if gpid.opId == op.id =>
-            // Emit metrics only for configured output ports in this cached region.
-            // Use -1 to preserve unknown cached counts in UI/stats instead of reporting 0.
-            val count = cfg.cachedTupleCount.getOrElse(-1L)
-            PortTupleMetricsMapping(gpid.portId, TupleMetrics(count, 0L))
-        }
-        .toSeq
+      val outputMetrics = resourceConfig.portConfigs.collect {
+        case (gpid, cfg: OutputPortConfig) if gpid.opId == op.id =>
+          // Emit metrics only for configured output ports in this cached region.
+          // Use -1 to preserve unknown cached counts in UI/stats instead of reporting 0.
+          val count = cfg.cachedTupleCount.getOrElse(-1L)
+          PortTupleMetricsMapping(gpid.portId, TupleMetrics(count, 0L))
+      }.toSeq
       val inputMetrics = op.inputPorts.keys
         // Use -1 to signal skipped/unknown input counts for cached operators.
         .map(pid => PortTupleMetricsMapping(pid, TupleMetrics(-1L, -1L)))
@@ -470,6 +469,17 @@ class RegionExecutionCoordinator(
     )
   }
 
+  /**
+    * Tags a failed worker RPC with the worker it targeted, so the `FatalError` surfaced for a
+    * region that cannot be launched can point at the failing operator/worker.
+    */
+  private def attributeFailureTo[T](workerId: ActorVirtualIdentity)(rpc: Future[T]): Future[T] =
+    rpc.rescue {
+      case err: WorkflowRuntimeException if err.relatedWorkerId.isDefined => Future.exception(err)
+      case err =>
+        Future.exception(new WorkflowRuntimeException(err.getMessage, err, Some(workerId)))
+    }
+
   private def initExecutors(
       operators: Set[PhysicalOp],
       resourceConfig: ResourceConfig
@@ -483,13 +493,15 @@ class RegionExecutionCoordinator(
           .flatMap(physicalOp => {
             val workerConfigs = resourceConfig.operatorConfigs(physicalOp.id).workerConfigs
             workerConfigs.map(_.workerId).map { workerId =>
-              asyncRPCClient.workerInterface.initializeExecutor(
-                InitializeExecutorRequest(
-                  workerConfigs.length,
-                  physicalOp.opExecInitInfo,
-                  physicalOp.isSourceOperator
-                ),
-                asyncRPCClient.mkContext(workerId)
+              attributeFailureTo(workerId)(
+                asyncRPCClient.workerInterface.initializeExecutor(
+                  InitializeExecutorRequest(
+                    workerConfigs.length,
+                    physicalOp.opExecInitInfo,
+                    physicalOp.isSourceOperator
+                  ),
+                  asyncRPCClient.mkContext(workerId)
+                )
               )
             }
           })
@@ -568,15 +580,17 @@ class RegionExecutionCoordinator(
           case (globalPortId, (storageUris, partitionings, schema)) =>
             resourceConfig.operatorConfigs(globalPortId.opId).workerConfigs.map(_.workerId).map {
               workerId =>
-                asyncRPCClient.workerInterface.assignPort(
-                  AssignPortRequest(
-                    globalPortId.portId,
-                    globalPortId.input,
-                    schema.toRawSchema,
-                    storageUris,
-                    partitionings
-                  ),
-                  asyncRPCClient.mkContext(workerId)
+                attributeFailureTo(workerId)(
+                  asyncRPCClient.workerInterface.assignPort(
+                    AssignPortRequest(
+                      globalPortId.portId,
+                      globalPortId.input,
+                      schema.toRawSchema,
+                      storageUris,
+                      partitionings
+                    ),
+                    asyncRPCClient.mkContext(workerId)
+                  )
                 )
             }
         }
@@ -629,8 +643,10 @@ class RegionExecutionCoordinator(
             workflowExecution.getRegionExecution(region.id).getOperatorExecution(opId).getWorkerIds
           )
           .map { workerId =>
-            asyncRPCClient.workerInterface
-              .openExecutor(EmptyRequest(), asyncRPCClient.mkContext(workerId))
+            attributeFailureTo(workerId)(
+              asyncRPCClient.workerInterface
+                .openExecutor(EmptyRequest(), asyncRPCClient.mkContext(workerId))
+            )
           }
           .toSeq
       )
@@ -659,16 +675,17 @@ class RegionExecutionCoordinator(
             .getOperatorExecution(opId)
             .getWorkerIds
             .map { workerId =>
-              asyncRPCClient.workerInterface
-                .startWorker(EmptyRequest(), asyncRPCClient.mkContext(workerId))
-                .map(resp =>
-                  // update worker state
-                  workflowExecution
-                    .getRegionExecution(region.id)
-                    .getOperatorExecution(opId)
-                    .getWorkerExecution(workerId)
-                    .update(System.nanoTime(), resp.state)
-                )
+              attributeFailureTo(workerId)(
+                asyncRPCClient.workerInterface
+                  .startWorker(EmptyRequest(), asyncRPCClient.mkContext(workerId))
+              ).map(resp =>
+                // update worker state
+                workflowExecution
+                  .getRegionExecution(region.id)
+                  .getOperatorExecution(opId)
+                  .getWorkerExecution(workerId)
+                  .update(System.nanoTime(), resp.state)
+              )
             }
         }
         .toSeq

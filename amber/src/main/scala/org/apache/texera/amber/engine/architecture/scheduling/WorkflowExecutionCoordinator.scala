@@ -69,9 +69,22 @@ class WorkflowExecutionCoordinator(
     val unfinishedRegionCoordinators =
       regionExecutionCoordinators.values.filter(!_.isCompleted).toSeq
 
-    // Trigger sync for each unfinished region.
-    unfinishedRegionCoordinators.foreach(_.syncStatusAndTransitionRegionExecutionPhase())
+    // Trigger sync for each unfinished region. The returned futures must not be dropped: a sync
+    // may launch the next phase of a region, and a failure there (e.g., a worker failing to
+    // initialize its executor) would otherwise be lost, leaving the execution RUNNING forever
+    // with no error reported to the client.
+    val syncFutures =
+      unfinishedRegionCoordinators.map(_.syncStatusAndTransitionRegionExecutionPhase())
 
+    Future
+      .collect(syncFutures :+ coordinateNextRegions(actorService, unfinishedRegionCoordinators))
+      .unit
+  }
+
+  private def coordinateNextRegions(
+      actorService: PekkoActorService,
+      unfinishedRegionCoordinators: Seq[RegionExecutionCoordinator]
+  ): Future[Unit] = {
     // Wait only for region termination futures (kill path), then re-run coordination.
     val terminationFutures = unfinishedRegionCoordinators.flatMap(_.getTerminationFutureOpt)
     if (terminationFutures.nonEmpty) {
