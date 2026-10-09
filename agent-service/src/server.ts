@@ -109,10 +109,14 @@ async function createAgentInstance(options: {
   createdAt?: Date;
   config?: AgentMetadata["config"];
   reactSteps?: ReActStep[];
+  // Optional at creation/rehydration: the LLM client's apiKey is re-bound to the
+  // requesting user's JWT per request in applyAgentRequestContext before any
+  // generation, so the model is always authenticated as the delegating user.
+  userToken?: string;
 }): Promise<{ agentId: string; agent: TexeraAgent }> {
   const agentId = options.agentId ?? randomUUID();
   const agent = new TexeraAgent({
-    model: createAgentModel(options.modelType),
+    model: createAgentModel(options.modelType, options.userToken),
     modelType: options.modelType,
     agentId,
     agentName: options.name || DEFAULT_AGENT_NAME,
@@ -130,12 +134,18 @@ async function createAgentInstance(options: {
   return { agentId, agent };
 }
 
-function createAgentModel(modelType: string) {
+// Builds the LLM client. The apiKey is the delegating user's JWT: the LLM
+// gateway (access-control-service) enforces a REGULAR/ADMIN-role JWT
+// (apache/texera#5421) and injects the LiteLLM master key downstream, so the
+// user's JWT is the only credential this service sends (apache/texera#5605).
+// userToken may be absent at creation/rehydration; applyAgentRequestContext
+// re-binds the model with the request's token before any generation.
+function createAgentModel(modelType: string, userToken?: string) {
   const config = getBackendConfig();
 
   const openai = createOpenAI({
     baseURL: `${config.modelsEndpoint}/api`,
-    apiKey: env.LLM_API_KEY,
+    apiKey: userToken,
   });
 
   // Reasoning effort variants are configured as separate model entries in litellm-config.yaml
@@ -228,6 +238,12 @@ export async function applyAgentRequestContext(
   }
   await authorizeAgentAccess(agentId, userToken);
 
+  // Re-bind the LLM client to this request's user JWT so generation authenticates
+  // as the delegating user against the role-gated LLM gateway (apache/texera#5421,
+  // #5605). The agent's model is created once (and rehydrated agents keep a stale
+  // or absent key), so refresh it here — the per-request funnel before any run.
+  agent.updateAgentMetadata({ model: createAgentModel(agent.modelType, userToken) });
+
   const taskContext: AgentTaskContext = {
     userToken,
     userInfo: extractUserFromToken(userToken),
@@ -244,9 +260,15 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
   // Error handler must live on the same Elysia instance whose routes throw, or
   // its scope will not see the errors. Elysia 1.x defaults to local scoping for
   // .onError, so attach here rather than on the outer app.
-  .onError(({ error, set }) => {
+  .onError(({ code, error, set }) => {
     log.error({ err: error }, "request error");
     const errorMessage = error instanceof Error ? error.message : String(error);
+    // Body schema violations and malformed JSON are client errors, not 500s
+    // (apache/texera#5605).
+    if (code === "VALIDATION" || code === "PARSE") {
+      set.status = 400;
+      return { error: errorMessage || "Invalid request body" };
+    }
     if (errorMessage === "Agent not found") {
       set.status = 404;
       return { error: "Agent not found" };
@@ -271,19 +293,14 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
       set.status = 404;
       return { error: "NOT_FOUND" };
     }
-    if (errorMessage === "modelType is required") {
-      set.status = 400;
-      return { error: "modelType is required" };
-    }
     if (
+      errorMessage === "modelType is required" ||
       errorMessage === "name must not be empty" ||
       errorMessage === "modelType must not be empty" ||
-      errorMessage === "agent update is required"
+      errorMessage === "agent update is required" ||
+      errorMessage === "workflowId is required" ||
+      errorMessage === "computingUnitId is required"
     ) {
-      set.status = 400;
-      return { error: errorMessage };
-    }
-    if (errorMessage === "workflowId is required" || errorMessage === "computingUnitId is required") {
       set.status = 400;
       return { error: errorMessage };
     }
@@ -322,6 +339,9 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
         throw new Error("modelType is required");
       }
 
+      // The token travels in the Authorization header (or the WS access-token
+      // query param), never in the payload. It seeds the agent's LLM client and
+      // is re-bound per request (createAgentModel / applyAgentRequestContext).
       const token = extractBearerToken(headers as any, query as any);
       if (!token) {
         throw new Error("Unauthorized");
@@ -335,7 +355,7 @@ const agentsRouter = new Elysia({ prefix: "/agents" })
         throw new Error("Unauthorized");
       }
 
-      const { agentId, agent } = await createAgentInstance({ modelType, name });
+      const { agentId, agent } = await createAgentInstance({ modelType, name, userToken: token });
 
       try {
         await agentMetadataStore.createAgent({
@@ -771,7 +791,6 @@ function printStartupMessage(app: ReturnType<typeof buildApp>) {
 
   console.log("");
   console.log("Environment:");
-  console.log(`  LLM_API_KEY: ${env.LLM_API_KEY === "dummy" ? "dummy (default)" : "set"}`);
   console.log(`  LLM_ENDPOINT: ${getBackendConfig().modelsEndpoint}`);
   console.log(`  WORKFLOW_COMPILING_SERVICE_ENDPOINT: ${getBackendConfig().compileEndpoint}`);
   console.log(`  TEXERA_DASHBOARD_SERVICE_ENDPOINT: ${getBackendConfig().apiEndpoint}`);

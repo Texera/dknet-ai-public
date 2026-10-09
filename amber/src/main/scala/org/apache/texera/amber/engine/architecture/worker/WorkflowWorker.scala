@@ -107,8 +107,14 @@ class WorkflowWorker(
       )
     }
     // dp is ready
-    dpThread =
-      new DPThread(workerConfig.workerId, dp, logManager, inputQueue, workerConfig.userJwtToken)
+    dpThread = new DPThread(
+      workerConfig.workerId,
+      dp,
+      logManager,
+      inputQueue,
+      workerConfig.userJwtToken,
+      workerConfig.largeBinaryBaseUri
+    )
     dpThread.start()
   }
 

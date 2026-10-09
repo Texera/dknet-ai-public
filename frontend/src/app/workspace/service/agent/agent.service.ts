@@ -862,6 +862,9 @@ export class AgentService {
 
   /**
    * Create a new agent with the specified model type.
+   * The user's JWT travels in the Authorization header (here via agentHeaders()),
+   * which the agent service requires to authenticate to the LLM gateway as the
+   * delegating user (apache/texera#5605).
    * @param modelType - The LLM model type to use
    * @param customName - Optional custom name for the agent
    */
